@@ -69,6 +69,15 @@ describe('EsploraClient', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('429 sul primario e riserva irraggiungibile → resta "rate-limit"', async () => {
+    const { client } = setup((url) => {
+      if (url.startsWith(PRIMARY)) return text('Too Many Requests', 429);
+      throw new TypeError('Failed to fetch');
+    });
+    const err = (await client.getUtxos('tb1q').catch((e: unknown) => e)) as EsploraError;
+    expect(err.kind).toBe('rate-limit');
+  });
+
   it('un rifiuto del broadcast (400) non si ripete sulla riserva', async () => {
     const reason = 'sendrawtransaction RPC error: {"code":-26,"message":"min relay fee not met"}';
     const { client, calls } = setup(() => text(reason, 400));

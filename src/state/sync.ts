@@ -132,10 +132,18 @@ async function doRefresh(full: boolean): Promise<void> {
   }
 }
 
-/** Aggiorna subito (le richieste concorrenti si uniscono a quella in corso). */
+/**
+ * Aggiorna subito. Le richieste concorrenti si uniscono a quella in corso; con `full` la promessa
+ * si risolve solo dopo un aggiornamento completo partito dopo la chiamata.
+ */
 export function refresh(opts: { full?: boolean } = {}): Promise<void> {
+  if (inFlight) {
+    if (!opts.full) return inFlight;
+    fullRequested = true;
+    // finita quella in corso, parte subito quella completa (vedi finally): aspettiamo anche lei
+    return inFlight.then(() => inFlight ?? undefined);
+  }
   if (opts.full) fullRequested = true;
-  if (inFlight) return inFlight;
   const full = fullRequested;
   fullRequested = false;
   inFlight = doRefresh(full).finally(() => {

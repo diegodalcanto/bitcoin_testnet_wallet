@@ -179,7 +179,8 @@ export class EsploraClient {
       } catch (err) {
         const e = err instanceof EsploraError ? err : new EsploraError('network', String(err));
         if (!e.retryable) throw e;
-        lastError = e;
+        // "Troppe richieste" è l'informazione più utile: non la copre un errore di rete della riserva.
+        if (lastError?.kind !== 'rate-limit') lastError = e;
       }
     }
     throw lastError ?? new EsploraError('network', 'Nessun server raggiungibile');

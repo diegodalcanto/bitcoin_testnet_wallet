@@ -79,6 +79,17 @@ export class MockEsplora {
     for (const u of this.utxos.values()) if (u.height === null) u.height = this.height;
   }
 
+  /** Il server "dimentica" una transazione in mempool (come un nodo che non l'ha mai ricevuta). */
+  drop(txid) {
+    const entry = this.txs.get(txid);
+    if (!entry || entry.tx.status.confirmed) return;
+    this.txs.delete(txid);
+    entry.tx.vout.forEach((_, i) => this.utxos.delete(`${txid}:${i}`));
+    entry.tx.vin.forEach((vin) =>
+      this.utxos.set(`${vin.txid}:${vin.vout}`, { txid: vin.txid, vout: vin.vout, value: vin.prevout.value, address: vin.prevout.scriptpubkey_address, height: this.height }),
+    );
+  }
+
   /** Da qui in poi l'API "non vede" le novità (come un server in ritardo). */
   freeze() {
     this.stale = true;

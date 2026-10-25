@@ -63,18 +63,11 @@ function SyncLine(): JSX.Element {
       </p>
     );
   }
+  // Il testo cambia solo con l'orario dell'ultimo aggiornamento: niente lampeggio ogni 15 s.
   return (
     <p class="status-line" role="status">
-      {status.loading ? (
-        <>
-          <Icon name="refresh" class="chev spin" />
-          {t.home.refreshing}
-        </>
-      ) : updatedAt ? (
-        t.home.updatedAt(formatTime(updatedAt))
-      ) : (
-        t.common.loading
-      )}
+      <Icon name="refresh" class={`chev${status.loading ? ' spin' : ''}`} />
+      {updatedAt ? t.home.updatedAt(formatTime(updatedAt)) : t.common.loading}
     </p>
   );
 }
