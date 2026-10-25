@@ -1,0 +1,39 @@
+{
+  "name": "bitcoin-testnet-wallet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Wallet Bitcoin minimale solo per reti di test, per i laboratori didattici del Bitcoin Meetup Pisa e dell'Internet Festival",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bitcoinerlab/secp256k1": "2.0.0",
+    "@noble/hashes": "2.4.0",
+    "@preact/signals": "2.11.3",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0",
+    "bitcoinjs-lib": "7.0.4",
+    "ecpair": "3.0.2",
+    "preact": "11.0.2",
+    "qr-scanner": "1.4.2",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/qrcode": "1.5.6",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "5.0.5",
+    "workbox-window": "7.4.1"
+  }
+}
