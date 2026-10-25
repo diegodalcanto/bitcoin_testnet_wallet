@@ -38,7 +38,8 @@ export default defineConfig({
       // Mai aggiornare in silenzio a metà laboratorio: l'app mostra "Nuova versione disponibile".
       registerType: 'prompt',
       injectRegister: false,
-      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+      // Icone e favicon sono già comprese nei globPatterns qui sotto.
+      includeManifestIcons: false,
       manifest: {
         id: base,
         name: 'Testnet Wallet – Laboratorio Bitcoin',
@@ -61,7 +62,7 @@ export default defineConfig({
       },
       workbox: {
         // Cache di tutti i file dell'app per l'apertura offline; le chiamate API non vanno in cache.
-        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
         // Il PNG originale del Meetup (310 KB) non è usato: l'app mostra la versione WebP.
         globIgnores: ['**/brand/meetup-pisa.png', '**/brand/README.md'],
         navigateFallback: `${base}index.html`,
