@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#F7931A"/>
+  <path d="M-40 300a300 300 0 0 1 300-300" fill="none" stroke="#FFC000" stroke-width="22" stroke-dasharray="34 26" opacity=".9"/>
+  <!-- beuta da laboratorio -->
+  <path d="M206 92h100v12h-10v104l92 186c11 22-5 46-29 46H153c-24 0-40-24-29-46l92-186V104h-10z" fill="#0B1430"/>
+  <!-- livello del "liquido" -->
+  <path d="M168 330h176l36 72c5 10-2 22-13 22H145c-11 0-18-12-13-22z" fill="#16255c"/>
+  <!-- bollicine -->
+  <circle cx="246" cy="176" r="9" fill="#FFC000"/>
+  <circle cx="270" cy="146" r="6" fill="#FFC000"/>
+  <!-- moneta con la B di Bitcoin -->
+  <g transform="translate(256 338) rotate(14)">
+    <circle r="72" fill="#F7931A"/>
+    <g fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-24 -38V38"/>
+      <path d="M-30 -38H6a19 19 0 0 1 0 38H-24"/>
+      <path d="M-24 0H11a19 19 0 0 1 0 38H-30"/>
+      <path d="M-10 -52V-38M8 -52V-38M-10 38V52M8 38V52"/>
+    </g>
+  </g>
+</svg>
