@@ -228,6 +228,7 @@ describe('classifyBroadcastError', () => {
     ['sendrawtransaction RPC error -26: txn-mempool-conflict', 'inputs-spent'],
     ['sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}', 'already-known'],
     ['sendrawtransaction RPC error: {"code":-26,"message":"txn-already-in-mempool"}', 'already-known'],
+    ['sendrawtransaction RPC error: {"code":-27,"message":"Transaction outputs already in utxo set"}', 'already-known'],
     ['sendrawtransaction RPC error: {"code":-26,"message":"dust"}', 'dust'],
     ['sendrawtransaction RPC error -22: TX decode failed', 'unknown'],
   ])('%s → %s', (message, kind) => {

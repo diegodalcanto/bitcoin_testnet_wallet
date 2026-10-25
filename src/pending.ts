@@ -13,8 +13,8 @@ export interface PendingTx {
   createdAt: number;
   /** Transazione grezza: serve per ritrasmetterla se un server non la conosce. */
   hex: string;
-  /** Monete spese da questa transazione. */
-  spent: Outpoint[];
+  /** Monete spese da questa transazione (con il valore, per mostrarle nel dettaglio). */
+  spent: (Outpoint & { value?: number })[];
   /** Output verso il proprio indirizzo (di solito il resto). */
   ownOutputs: { vout: number; value: number }[];
   /** Per lo storico: destinatario, importo, fee, dimensione. */
@@ -40,7 +40,7 @@ export function pendingFromPlan(plan: TxPlan, signed: SignedTx, ownAddress: stri
     txid: signed.txid,
     createdAt: now,
     hex: signed.hex,
-    spent: plan.inputs.map(({ txid, vout }) => ({ txid, vout })),
+    spent: plan.inputs.map(({ txid, vout, value }) => ({ txid, vout, value })),
     ownOutputs: plan.outputs.flatMap((o, vout) => (o.address === ownAddress ? [{ vout, value: o.value }] : [])),
     recipient: recipient?.address ?? '',
     amount: plan.amount,

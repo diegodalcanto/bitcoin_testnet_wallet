@@ -258,7 +258,7 @@ export type BroadcastErrorKind =
 /** Classifica il messaggio d'errore di un nodo (via Esplora) per mostrare un messaggio comprensibile. */
 export function classifyBroadcastError(message: string): BroadcastErrorKind {
   const m = message.toLowerCase();
-  if (/txn-already-in-mempool|txn-already-known|transaction already in block chain|already have transaction/.test(m)) {
+  if (/txn-already-in-mempool|txn-already-known|transaction already in block chain|already in utxo set|already have transaction/.test(m)) {
     return 'already-known';
   }
   if (/too-long-mempool-chain|too many unconfirmed (ancestors|descendants)|exceeds (ancestor|descendant)|cluster/.test(m)) {
