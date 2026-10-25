@@ -13,7 +13,7 @@ I ragazzi la installano dal link, ricevono sats di test e li "puntano" sulle ris
 
 1. **Mai mainnet.** Parametri `bitcoin.networks.testnet`, indirizzi `tb1q…` (BIP84, `m/84'/1'/0'/0/0`).
    Rifiutare indirizzi `bc1…`/`1…`/`3…`, WIF mainnet, `xprv`/`yprv`/`zprv`, server Esplora di mainnet
-   (controllo del blocco genesi in `src/networks.ts`).
+   (controllo del blocco genesi in `src/probe.ts`).
 2. **Nessun backend proprio.** Chiavi, firma e costruzione delle transazioni avvengono solo nel
    browser; in rete si parla solo con API Esplora pubbliche via `fetch` (nessun SDK, nessun analytics).
 3. **Fondi non confermati spendibili** (requisito critico, spec §5): UTXO dell'API (confermati e no)
@@ -42,32 +42,50 @@ I ragazzi la installano dal link, ricevono sats di test e li "puntano" sulle ris
 
 ```bash
 npm ci              # installa le dipendenze (Node 22+)
-npm run dev         # server di sviluppo
+npm run dev         # server di sviluppo (base /bitcoin_testnet_wallet/)
 npm test            # unit test (Vitest)
-npm run typecheck   # controllo dei tipi (tsc --noEmit)
+npm run typecheck   # controllo dei tipi (TypeScript 7, tsc --noEmit)
 npm run build       # build statica in dist/
 npm run preview     # serve dist/ in locale
-npm run test:e2e    # smoke test nel browser (Playwright, API simulate)
+npm run test:e2e    # build + smoke test Playwright con API Esplora simulate (screenshot in e2e/screenshots/)
 ```
 
-Prima di ogni commit: `npm run typecheck && npm test && npm run build`.
+Prima di ogni commit: `npm run typecheck && npm test && npm run build`. Dopo modifiche all'interfaccia o
+al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 
 ## Struttura
 
 | Percorso | Contenuto |
 | --- | --- |
-| `src/config.ts` | Parametri (fee, dust, polling, timeout…) |
-| `src/networks.ts` | Reti, endpoint, colori del badge, riconoscimento della catena |
-| `src/address.ts` | Validazione indirizzi (rifiuto mainnet) e URI BIP21 |
-| `src/wallet.ts` | Frase BIP39, derivazione BIP84, WIF, `tpub`/`vpub`, persistenza |
-| `src/esplora.ts` | Client Esplora con endpoint di riserva, timeout, errori tipizzati |
-| `src/tx.ts` | Stima vsize/fee, dust, costruzione e firma, classificazione errori di broadcast |
-| `src/pending.ts` | Stato locale delle transazioni appena inviate e unione con l'API |
-| `src/state/` | Stato dell'app (signals), sincronizzazione/polling, invio con ritentativi |
-| `src/ui/` | Schermate e componenti Preact, CSS |
-| `src/i18n/it.ts` | Tutti i testi, comprese le schede "Impara" e i box "i" |
+| `src/config.ts` | Parametri (fee, dust, polling, timeout, scadenza delle voci locali…) |
+| `src/networks.ts` | Reti, endpoint con riserva, colori del badge, riconoscimento della catena dal blocco genesi |
+| `src/address.ts` | Validazione indirizzi (rifiuto mainnet/regtest/Lightning) e URI BIP21 |
+| `src/wallet.ts` | Frase BIP39, derivazione BIP84, WIF, `tpub`/`vpub`, ripristino, persistenza |
+| `src/esplora.ts` | Client Esplora: riserva su rete/timeout/429/5xx, errori 4xx definitivi |
+| `src/tx.ts` | Stima vsize/fee, dust, consolidamento, firma PSBT, classificazione errori di broadcast |
+| `src/pending.ts` | Stato locale delle transazioni appena inviate e unione con gli UTXO dell'API |
+| `src/history.ts`, `src/format.ts` | Storico visto dal proprio indirizzo, formattazione it-IT |
+| `src/probe.ts` | Prova di un server Esplora personalizzato (rifiuta mainnet) |
+| `src/storage.ts`, `src/ecc.ts`, `src/brand.ts` | localStorage sicuro, init secp256k1, elenco loghi |
+| `src/state/` | Signals: impostazioni, wallet e dati di rete (`wallet.ts`), polling (`sync.ts`), invio con ritentativi (`send.ts`), PIN, PWA, router a hash, piattaforma |
+| `src/ui/` | `App.tsx` (shell, header con badge, navigazione), `screens/` (una schermata per file), componenti comuni, `styles.css` |
+| `src/i18n/it.ts` | Tutti i testi: `explain` (box "i"), `learnCards` (Impara), `t` (interfaccia) |
 | `public/brand/` | Loghi (versione chiara e scura) |
-| `e2e/` | Smoke test Playwright con API Esplora simulate |
+| `public/icons/`, `public/favicon.svg` | Icone della PWA |
+| `e2e/` | `mock-esplora.mjs` (Esplora finto che decodifica le tx) e `smoke.mjs` |
+
+## Note di implementazione
+
+- Polling: una chiamata `/address/:a/utxo` per aggiornamento; `/address/:a/txs` solo se le monete cambiano,
+  ultimo blocco ogni 4 aggiornamenti o quando una moneta riceve la prima conferma (`src/state/sync.ts`).
+- Invio (`src/state/send.ts`): fee troppo bassa → una volta con fee doppia; input spesi → ritrasmette le
+  transazioni locali, scarta quelle in conflitto, ricarica e riprova una volta; errore di rete → controlla
+  `/tx/:txid` prima di dire che è fallito (per non pagare due volte).
+- Una voce locale è "riflessa" dall'API solo se l'API la conosce **e** nella stessa vista nessuna delle sue
+  monete risulta ancora non spesa (protegge da server di riserva in ritardo).
+- Su iOS non installata si mostra la guida all'installazione prima di creare il wallet.
+- Messaggio d'errore del limite cluster di Core 31: la stringa esatta non è documentata; si riconosce
+  `too-long-mempool-chain` o qualsiasi testo che contenga "cluster".
 
 ## Librerie (versioni verificate a ottobre 2026)
 
@@ -76,7 +94,10 @@ Prima di ogni commit: `npm run typecheck && npm test && npm run build`.
 - `ecpair` 3 + `@bitcoinerlab/secp256k1` 2 (JS puro, niente WASM).
 - `@scure/bip39` / `@scure/bip32` 2 (solo ESM).
 - `qr-scanner` per leggere i QR (funziona su Safari iOS), `qrcode` per generarli.
-- `vite-plugin-pwa` con `registerType: 'prompt'`: mai aggiornare l'app in silenzio a metà laboratorio.
+- `vite-plugin-pwa` 2 con `registerType: 'prompt'`: mai aggiornare l'app in silenzio a metà laboratorio.
+- Preact 11 + `@preact/signals` 2, JSX trasformato da Vite 8 (Oxc) leggendo `jsxImportSource` dal tsconfig
+  (nessun `@preact/preset-vite`). `useRef` richiede sempre un valore iniziale.
+- Target di build: Safari 15 / Chrome 100 (iPhone non recentissimi): niente API più nuove senza ripiego.
 
 ## Convenzioni
 
