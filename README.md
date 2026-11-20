@@ -72,7 +72,7 @@ Con queste regole ogni ragazzo resta in un cluster suo, di poche transazioni.
 
 ### Cambiare rete
 
-Dalla Home, icona delle **Impostazioni** in alto a destra → **Rete**:
+Dalla Home, icona delle **Impostazioni** (ingranaggio) in alto a destra → **Rete**:
 
 | Rete | Server | Quando usarla |
 | --- | --- | --- |
@@ -90,6 +90,7 @@ transazioni in attesa.
 | Problema | Soluzione |
 | --- | --- |
 | La fotocamera non parte o il permesso è negato | Usare **Incolla**, oppure abilitare la fotocamera nelle impostazioni del browser |
+| Un ragazzo vuole ripartire con un wallet nuovo | Impostazioni (ingranaggio in alto a destra nella Home) → **Crea un nuovo wallet**, oppure in fondo a *Le mie chiavi*: doppia conferma, poi compaiono le 12 parole nuove. Il wallet attuale viene sostituito solo alla fine |
 | PIN dimenticato | "Ho dimenticato il PIN" cancella il wallet: si ripristina con le 12 parole |
 | Dati del browser cancellati / app disinstallata | Il wallet si recupera solo con le 12 parole (Impostazioni → Ripristina wallet) |
 | Su iPhone il wallet "è sparito" dopo l'installazione | Era stato creato in Safari: l'app installata ha una memoria separata |

@@ -84,6 +84,9 @@ al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 - Una voce locale è "riflessa" dall'API solo se l'API la conosce **e** nella stessa vista nessuna delle sue
   monete risulta ancora non spesa (protegge da server di riserva in ritardo).
 - Su iOS non installata si mostra la guida all'installazione prima di creare il wallet.
+- Nuovo wallet (`screens/NewWallet.tsx`, da Impostazioni o da Le mie chiavi): doppia conferma, poi
+  `screens/CreateWallet.tsx` (lo stesso componente dell'onboarding) mostra le parole nuove; il wallet
+  attuale viene sostituito da `installWallet` solo alla fine, quindi "Indietro" non perde nulla.
 - Messaggio d'errore del limite cluster di Core 31: la stringa esatta non è documentata; si riconosce
   `too-long-mempool-chain` o qualsiasi testo che contenga "cluster".
 
