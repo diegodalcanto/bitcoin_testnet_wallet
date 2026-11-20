@@ -419,11 +419,14 @@ export const t = {
   },
   newWallet: {
     title: 'Nuovo wallet',
-    text: 'Creare un nuovo wallet cancella quello attuale da questo telefono. Senza le sue 12 parole i suoi sats andranno persi per sempre.',
+    text: 'Puoi ripartire da zero con un wallet nuovo e 12 parole nuove. Il wallet attuale verrà cancellato da questo telefono: senza le sue 12 parole i suoi sats andranno persi per sempre.',
+    balanceWarning: (amount: string) => `Su questo wallet ci sono ancora ${amount} sats.`,
+    saveFirst: 'Se vuoi conservare il wallet attuale, prima scrivi le sue 12 parole da Le mie chiavi.',
     button: 'Crea un nuovo wallet',
     confirmTitle: 'Sei proprio sicuro?',
-    confirmText: 'Ultima conferma: il wallet attuale verrà cancellato.',
-    confirmButton: 'Cancella e crea nuovo',
+    confirmText: 'Ultima conferma: ora vedrai le 12 parole nuove. Quando avrai finito, il wallet attuale verrà cancellato da questo telefono.',
+    confirmButton: 'Sì, crea il nuovo wallet',
+    done: 'Nuovo wallet pronto! Il tuo nuovo indirizzo può ricevere i sats di test.',
   },
   home: {
     balance: 'Saldo',
@@ -598,6 +601,8 @@ export const t = {
     xpub: 'Chiave pubblica estesa',
     address: 'Indirizzo',
     reveal: 'Mostra',
+    newWalletHint: 'Vuoi ripartire da zero? Puoi creare un wallet nuovo, con 12 parole nuove.',
+    newWallet: 'Crea un nuovo wallet',
   },
   coins: {
     title: 'Le mie monete',
@@ -665,7 +670,7 @@ export const t = {
     wallet: 'Wallet',
     keys: 'Le mie chiavi',
     restore: 'Ripristina wallet',
-    newWallet: 'Nuovo wallet',
+    newWallet: 'Crea un nuovo wallet',
     info: 'Info',
   },
   pin: {

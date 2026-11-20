@@ -51,7 +51,7 @@ function Header({ back, settingsLink }: { back: boolean; settingsLink: boolean }
         <div>
           {settingsLink && (
             <a class="icon-btn" href={paths.settings} aria-label={t.nav.settings} data-testid="settings-link">
-              <Icon name="sliders" />
+              <Icon name="gear" />
             </a>
           )}
         </div>
@@ -134,6 +134,7 @@ function useIncomingToast(): void {
 
 function Shell(): JSX.Element {
   useEffect(() => {
+    window.scrollTo(0, 0);
     startSync();
     return stopSync;
   }, []);

@@ -2,6 +2,7 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { explain, t, type ExplainTopic } from '../../i18n/it';
+import { paths } from '../../state/router';
 import { keys } from '../../state/wallet';
 import { CopyButton, Message, RichMessage } from '../common';
 import { Explainable, SectionTitle } from '../explain';
@@ -132,6 +133,13 @@ export function Keys(): JSX.Element | null {
       <RichMessage kind="warning" text={t.home.mainnetWarning} />
       <section class="card">
         <SectionTitle topic="storage">{explain.storage.title}</SectionTitle>
+      </section>
+      <section class="card stack">
+        <p class="small">{t.keys.newWalletHint}</p>
+        <a class="btn btn-outline-danger btn-block" href={paths.newWallet} data-testid="keys-new-wallet">
+          <Icon name="plusSquare" />
+          {t.keys.newWallet}
+        </a>
       </section>
     </div>
   );

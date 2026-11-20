@@ -112,6 +112,39 @@ export function Settings(): JSX.Element {
         <p class="muted small">{t.settings.forVolunteers}</p>
       </div>
 
+      <section class="card">
+        <h2 style={{ marginBottom: '4px' }}>{t.settings.wallet}</h2>
+        <ul class="list">
+          <li>
+            <a class="list-btn" href={paths.keys}>
+              <span class="row">
+                <Icon name="key" />
+                {t.settings.keys}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+          <li>
+            <a class="list-btn" href={paths.restore}>
+              <span class="row">
+                <Icon name="download" />
+                {t.settings.restore}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+          <li>
+            <a class="list-btn danger" href={paths.newWallet} data-testid="new-wallet-link">
+              <span class="row">
+                <Icon name="plusSquare" />
+                {t.settings.newWallet}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+        </ul>
+      </section>
+
       <NetworkSection />
 
       <section class="card">
@@ -171,39 +204,6 @@ export function Settings(): JSX.Element {
               </a>
             </li>
           )}
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2 style={{ marginBottom: '4px' }}>{t.settings.wallet}</h2>
-        <ul class="list">
-          <li>
-            <a class="list-btn" href={paths.keys}>
-              <span class="row">
-                <Icon name="key" />
-                {t.settings.keys}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
-          <li>
-            <a class="list-btn" href={paths.restore}>
-              <span class="row">
-                <Icon name="download" />
-                {t.settings.restore}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
-          <li>
-            <a class="list-btn danger" href={paths.newWallet}>
-              <span class="row">
-                <Icon name="refresh" />
-                {t.settings.newWallet}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
         </ul>
       </section>
 
