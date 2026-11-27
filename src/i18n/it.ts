@@ -34,7 +34,7 @@ export const explain = {
     body: [
       'È come un IBAN che puoi dare a chiunque per **ricevere**. Si ricava dalla chiave pubblica con funzioni a senso unico: dall’indirizzo non si risale alla chiave.',
       'Inizia con **tb1** perché è di una rete di test: su Bitcoin vero inizierebbe con bc1.',
-      'Qui usi sempre lo stesso indirizzo per semplicità. I wallet veri ne creano uno nuovo per ogni pagamento, per proteggere la privacy: le transazioni sono pubbliche!',
+      'Per ricevere usi sempre lo stesso indirizzo, così è facile registrarlo nel quiz. Il **resto** dei tuoi invii invece va ogni volta a un indirizzo nuovo del tuo wallet, come fanno i wallet veri per proteggere la privacy: le transazioni sono pubbliche!',
     ],
   },
   qr: {
@@ -76,7 +76,7 @@ export const explain = {
     title: 'Cosa succede',
     body: [
       'Prima di firmare puoi vedere la transazione: quali **monete** spendi (input), quali **output** crei e quanto pesa.',
-      'Questo wallet spende sempre tutte le monete insieme (consolidamento): il resto torna a te come una sola moneta nuova.',
+      'Questo wallet spende sempre tutte le monete insieme (consolidamento): il resto torna a te come una sola moneta nuova, su un **indirizzo nuovo** del tuo wallet.',
     ],
   },
   sign: {
@@ -110,8 +110,8 @@ export const explain = {
   history: {
     title: 'Ultime transazioni',
     body: [
-      'Ogni riga è una transazione che coinvolge il tuo indirizzo: ↓ in entrata, ↑ in uscita, con il numero di conferme.',
-      'Toccala per vedere input, output e fee: sono tutti dati pubblici, che chiunque può controllare.',
+      'Ogni riga è una transazione del tuo wallet (l’indirizzo per ricevere e quelli dei resti): ↓ in entrata, ↑ in uscita, con il numero di conferme.',
+      'Toccala per aprirla nel **block explorer** (mempool.space): input, output e fee sono dati pubblici, che chiunque può controllare. Con il pulsante ⓘ vedi i dettagli nell’app.',
     ],
   },
   transaction: {
@@ -145,7 +145,16 @@ export const explain = {
     title: 'Il resto',
     body: [
       'Se paghi 3.000 sats con una moneta da 10.000, la moneta si spende tutta: 3.000 vanno al destinatario e il **resto** (meno la fee) torna a te come moneta nuova.',
+      'Il resto non torna all’indirizzo da cui hai ricevuto: va a un **indirizzo nuovo** dello stesso wallet, ricavato dalle stesse 12 parole. Così chi guarda la blockchain fa più fatica a capire quale output è il pagamento e quale il resto.',
       'Se il resto è minuscolo (meno di 294 sats, la "polvere") non conviene crearlo: va al miner come fee.',
+    ],
+  },
+  changeAddresses: {
+    title: 'Indirizzi di resto',
+    body: [
+      'A ogni invio il resto va a un **indirizzo nuovo**, ricavato dalle tue 12 parole: il wallet li ritrova tutti, e il saldo è la somma delle monete su tutti i suoi indirizzi.',
+      "I resti stanno su un ramo a parte del percorso di derivazione: per il Wallet 1 **m/84'/1'/0'/1/0**, **…/1/1** e così via (lo **0** dopo l’account è il ramo per ricevere, l’**1** quello dei resti).",
+      'L’indirizzo per ricevere invece resta sempre lo stesso: è quello del QR e quello da registrare nel quiz.',
     ],
   },
   unconfirmed: {
@@ -194,7 +203,7 @@ export const explain = {
     title: 'Un seed, tanti wallet',
     body: [
       'Il tuo wallet è **gerarchico** (BIP32): dalle stesse 12 parole, il "seed", si ricavano una dopo l’altra tante chiavi e tanti indirizzi diversi.',
-      "Qui ogni wallet usa il suo indirizzo: Wallet 1 è **m/84'/1'/0'/0/0**, Wallet 2 è **…/0/1** e così via. Ognuno ha il suo saldo e le sue monete.",
+      "Qui ogni wallet riceve sul suo indirizzo: Wallet 1 su **m/84'/1'/0'/0/0**, Wallet 2 su **…/0/1** e così via. I resti vanno ogni volta a un indirizzo nuovo dello stesso wallet. Ognuno ha il suo saldo e le sue monete.",
       'Non servono parole nuove: le stesse 12 parole recuperano **tutti** i wallet, anche in un altro wallet compatibile BIP84.',
     ],
   },
@@ -478,6 +487,10 @@ export const t = {
     fee: (amount: string) => `fee ${amount}`,
     localOnly: 'appena inviata',
     confirmationsShort: (label: string) => `${label} conf.`,
+    openInExplorer: 'Apri nel block explorer',
+    txDetails: 'Dettagli della transazione nell’app',
+    showAll: (n: number) => `Mostra tutte (${n})`,
+    showLess: 'Mostra meno',
     pull: 'Trascina per aggiornare',
     release: 'Rilascia per aggiornare',
     refreshing: 'Aggiornamento…',
@@ -512,7 +525,7 @@ export const t = {
     quick50: '50%',
     quickAll: 'Tutto',
     available: (amount: string) => `Disponibili: ${amount} sats`,
-    selfWarning: 'Stai inviando al tuo stesso indirizzo.',
+    selfWarning: 'Stai inviando a un indirizzo di questo stesso wallet.',
     amountFromQr: (amount: string) => `Importo letto dal QR: ${amount} sats`,
     summary: 'Riepilogo',
     to: 'A',
@@ -524,7 +537,8 @@ export const t = {
     inputs: (n: number) => (n === 1 ? '1 moneta spesa (input)' : `${n} monete spese (input)`),
     outputs: (n: number) => (n === 1 ? '1 output' : `${n} output`),
     outputRecipient: 'destinatario',
-    outputChange: 'resto, torna a te',
+    outputChange: 'resto, a un tuo indirizzo nuovo',
+    outputChangeSame: 'resto, torna a te',
     unconfirmedCoin: 'non confermata',
     size: (vsize: number) => `Dimensione stimata: ${vsize} vB`,
     feeFormula: (vsize: number, rate: string, fee: string) => `${vsize} vB × ${rate} sat/vB = ${fee} sats di fee`,
@@ -633,7 +647,11 @@ export const t = {
     reveal: 'Mostra',
     newWalletHint: 'Ti serve un altro indirizzo? Puoi creare un nuovo wallet dalle stesse 12 parole.',
     newWallet: 'I miei wallet',
-    whichWallet: (name: string) => `Chiavi di ${name}: la frase è la stessa per tutti i wallet, il resto cambia.`,
+    whichWallet: (name: string) => `Chiavi di ${name}: la frase è la stessa per tutti i wallet, chiavi e indirizzi cambiano.`,
+    changeNone: 'Nessun resto per ora: il primo invio userà questo indirizzo.',
+    changeCount: (n: number) => (n === 1 ? '1 indirizzo di resto già usato.' : `${n} indirizzi di resto già usati.`),
+    changeNext: 'prossimo',
+    changeMore: (n: number) => (n === 1 ? '… e 1 più vecchio' : `… e altri ${n} più vecchi`),
   },
   coins: {
     title: 'Le mie monete',
@@ -645,7 +663,9 @@ export const t = {
     localChange: 'resto appena creato',
     inBlock: (height: string) => `nel blocco #${height}`,
     origin: 'Da',
-    consolidation: 'Quando invii, questo wallet usa tutte le monete insieme: dopo ogni invio ne resta una sola, il resto.',
+    consolidation: 'Quando invii, questo wallet usa tutte le monete insieme: dopo ogni invio ne resta una sola, il resto, su un indirizzo nuovo.',
+    onReceive: 'indirizzo per ricevere',
+    onChange: (n: number) => `indirizzo di resto n. ${n}`,
   },
   learn: {
     title: 'Impara',

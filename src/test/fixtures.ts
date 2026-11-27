@@ -13,6 +13,15 @@ export const ABANDON_VPUB =
 /** Wallet successivi ricavati dalla stessa frase: m/84'/1'/0'/0/1 e /0/2. */
 export const ABANDON_ADDRESS_1 = 'tb1qd7spv5q28348xl4myc8zmh983w5jx32cjhkn97';
 export const ABANDON_ADDRESS_2 = 'tb1qxdyjf6h5d6qxap4n2dap97q4j5ps6ua8sll0ct';
+/**
+ * Indirizzi di resto: Wallet 1 m/84'/1'/0'/1/0, /1/1, /1/2; Wallet 2 m/84'/1'/1'/1/0.
+ * Calcolati a parte con @scure/bip32; con la stessa procedura m/84'/0'/0'/1/0 dà il vettore BIP84 di
+ * mainnet bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el.
+ */
+export const ABANDON_CHANGE_0 = 'tb1q9u62588spffmq4dzjxsr5l297znf3z6j5p2688';
+export const ABANDON_CHANGE_1 = 'tb1qkwgskuzmmwwvqajnyr7yp9hgvh5y45kg8wvdmd';
+export const ABANDON_CHANGE_2 = 'tb1q2vma00td2g9llw8hwa8ny3r774rtt7aenfn5zu';
+export const ABANDON_W2_CHANGE_0 = 'tb1qkvjfredfz59jwvqru7a2spvugqd7dlx6e4aqvm';
 export const ABANDON_TPRV =
   'tprv8fSjiqEQ8YG7Ro7gw2ScwcvweYuuWi1ZzGUtrPz918HvDtBzL5s2voFTrN4y3yUwj5cYD54pLhxk6NKCzHUjcka3zbKjbTEcsuAnkzbjhkL';
 export const ABANDON_XPRV =

@@ -29,29 +29,51 @@ export type StoredWallet =
       count?: number;
       /** Indice del wallet in uso, da 0; se manca, 0. */
       active?: number;
+      /** Per ogni wallet, quanti indirizzi di resto ha già usato; se manca, 0. */
+      change?: number[];
     }
   | { v: 1; kind: 'wif'; wif: string; createdAt: number };
+
+/** Un indirizzo del wallet con la sua chiave. */
+export interface OwnedAddress {
+  address: string;
+  /** Percorso di derivazione (null per una WIF importata). */
+  path: string | null;
+  /** 'receive' = indirizzo di ricezione, fisso; 'change' = indirizzo di resto n. `index`. */
+  role: 'receive' | 'change';
+  index: number;
+  privateKey: Uint8Array;
+  publicKey: Uint8Array;
+  /** Script di output (serve per firmare con witnessUtxo). */
+  outputScript: Uint8Array;
+}
 
 export interface WalletKeys {
   kind: StoredWallet['kind'];
   /** Frase di recupero (solo per wallet creati o ripristinati da 12 parole). */
   mnemonic: string | null;
-  /** Percorso di derivazione dell'indirizzo, es. m/84'/1'/0'/0/0. */
+  /** Percorso di derivazione dell'indirizzo di ricezione, es. m/84'/1'/0'/0/0. */
   path: string | null;
   /** Indice del wallet ricavato dalla frase (null per una WIF importata). */
   index: number | null;
+  /** Chiave privata dell'indirizzo di ricezione. */
   privateKey: Uint8Array;
-  /** Chiave pubblica compressa (33 byte). */
+  /** Chiave pubblica compressa (33 byte) dell'indirizzo di ricezione. */
   publicKey: Uint8Array;
-  /** Chiave privata in formato WIF di rete test (inizia con "c"). */
+  /** Chiave privata dell'indirizzo di ricezione in formato WIF di rete test (inizia con "c"). */
   wif: string;
-  /** Indirizzo P2WPKH `tb1q…`, unico e riusato. */
+  /** Indirizzo di ricezione `tb1q…`, fisso: è quello del QR e quello da registrare nel quiz. */
   address: string;
-  /** Script di output dell'indirizzo (serve per firmare con witnessUtxo). */
   outputScript: Uint8Array;
   /** Chiave pubblica estesa dell'account m/84'/1'/0' (tpub e vpub). */
   tpub: string | null;
   vpub: string | null;
+  /** Indirizzi di resto già usati, in ordine. */
+  change: OwnedAddress[];
+  /** Indirizzo di resto nuovo per il prossimo invio (per una WIF: lo stesso indirizzo). */
+  nextChange: OwnedAddress;
+  /** Tutti gli indirizzi del wallet: ricezione, resti usati e prossimo resto. */
+  owned: ReadonlyMap<string, OwnedAddress>;
 }
 
 function randomBytes(length: number): Uint8Array {
@@ -63,43 +85,82 @@ export function generateMnemonic(random: (length: number) => Uint8Array = random
   return entropyToMnemonic(random(16), wordlist);
 }
 
-function keysFromPrivateKey(privateKey: Uint8Array): Pick<WalletKeys, 'privateKey' | 'publicKey' | 'wif' | 'address' | 'outputScript'> {
-  const pair = ECPair.fromPrivateKey(privateKey, { network: BITCOIN_NETWORK, compressed: true });
-  const payment = payments.p2wpkh({ pubkey: pair.publicKey, network: BITCOIN_NETWORK });
+function ownedAddress(
+  privateKey: Uint8Array,
+  publicKey: Uint8Array,
+  path: string | null,
+  role: OwnedAddress['role'],
+  index: number,
+): OwnedAddress {
+  const payment = payments.p2wpkh({ pubkey: publicKey, network: BITCOIN_NETWORK });
   if (!payment.address || !payment.output) throw new Error('Impossibile calcolare l’indirizzo');
-  return {
-    privateKey,
-    publicKey: pair.publicKey,
-    wif: pair.toWIF(),
-    address: payment.address,
-    outputScript: payment.output,
-  };
+  return { address: payment.address, path, role, index, privateKey, publicKey, outputScript: payment.output };
 }
 
-/** Percorso del wallet n (da 0): stesso account BIP84, indirizzo di ricezione n. */
+/** Percorso dell'indirizzo di ricezione del wallet n (da 0): account 0, indirizzo di ricezione n. */
 export function walletPath(index: number): string {
   return `${CONFIG.RECEIVE_PATH}/${index}`;
 }
 
-/** La derivazione BIP39 (2048 giri di PBKDF2) è lenta: si ricorda l'ultima frase usata. */
-let derivationCache: { mnemonic: string; account: HDKey; receive: HDKey } | null = null;
+/**
+ * Percorso dell'indirizzo di resto `k` del wallet n. Il Wallet 1 usa la catena dei resti standard
+ * dell'account 0 (m/84'/1'/0'/1/k); il wallet n ≥ 1 quella del suo account (m/84'/1'/n'/1/k),
+ * così i resti di wallet diversi non si mescolano mai.
+ */
+export function changePath(walletIndex: number, k: number): string {
+  return `${CONFIG.CHANGE_PATH_PREFIX}/${walletIndex}'/1/${k}`;
+}
 
-function accountNodes(mnemonic: string): { account: HDKey; receive: HDKey } {
+/** La derivazione BIP39 (2048 giri di PBKDF2) è lenta: si ricorda l'ultima frase usata e gli indirizzi già calcolati. */
+let derivationCache: { mnemonic: string; root: HDKey; nodes: Map<string, HDKey>; addresses: Map<string, OwnedAddress> } | null = null;
+
+function cacheFor(mnemonic: string) {
   if (derivationCache?.mnemonic !== mnemonic) {
-    const account = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic), TPUB_VERSIONS).derive(CONFIG.ACCOUNT_PATH);
-    derivationCache = { mnemonic, account, receive: account.deriveChild(0) };
+    derivationCache = { mnemonic, root: HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic), TPUB_VERSIONS), nodes: new Map(), addresses: new Map() };
   }
   return derivationCache;
 }
 
+function nodeAt(mnemonic: string, path: string): HDKey {
+  const cache = cacheFor(mnemonic);
+  let node = cache.nodes.get(path);
+  if (!node) {
+    const cut = path.lastIndexOf('/');
+    const parentPath = path.slice(0, cut);
+    const last = path.slice(cut + 1);
+    const hardened = last.endsWith("'");
+    node =
+      parentPath === 'm' || hardened
+        ? cache.root.derive(path)
+        : nodeAt(mnemonic, parentPath).deriveChild(Number(last));
+    cache.nodes.set(path, node);
+  }
+  return node;
+}
+
+function addressAt(mnemonic: string, path: string, role: OwnedAddress['role'], index: number): OwnedAddress {
+  const cache = cacheFor(mnemonic);
+  let owned = cache.addresses.get(path);
+  if (!owned) {
+    const node = nodeAt(mnemonic, path);
+    if (!node.privateKey || !node.publicKey) throw new Error('Derivazione non riuscita');
+    owned = ownedAddress(node.privateKey, node.publicKey, path, role, index);
+    cache.addresses.set(path, owned);
+  }
+  return owned;
+}
+
 /**
- * Frase → seme (BIP39) → account BIP84 m/84'/1'/0' → indirizzo di ricezione `index`.
- * Wallet gerarchico: dalla stessa frase si ricavano tutti i wallet, uno per indice.
+ * Frase → seme (BIP39) → wallet `index`: indirizzo di ricezione m/84'/1'/0'/0/index e indirizzi di
+ * resto (i primi `changeUsed` già usati, più quello nuovo per il prossimo invio).
+ * Wallet gerarchico: dalla stessa frase si ricavano tutti gli indirizzi di tutti i wallet.
  */
-export function keysFromMnemonic(mnemonic: string, index = 0): WalletKeys {
-  const { account, receive } = accountNodes(mnemonic);
-  const node = receive.deriveChild(index);
-  if (!node.privateKey || !account.publicKey || !account.chainCode) throw new Error('Derivazione non riuscita');
+export function keysFromMnemonic(mnemonic: string, index = 0, changeUsed = 0): WalletKeys {
+  const account = nodeAt(mnemonic, CONFIG.ACCOUNT_PATH);
+  if (!account.publicKey || !account.chainCode) throw new Error('Derivazione non riuscita');
+  const receive = addressAt(mnemonic, walletPath(index), 'receive', index);
+  const change = Array.from({ length: changeUsed }, (_, k) => addressAt(mnemonic, changePath(index, k), 'change', k));
+  const nextChange = addressAt(mnemonic, changePath(index, changeUsed), 'change', changeUsed);
   const vpubNode = new HDKey({
     versions: VPUB_VERSIONS,
     depth: account.depth,
@@ -111,31 +172,48 @@ export function keysFromMnemonic(mnemonic: string, index = 0): WalletKeys {
   return {
     kind: 'mnemonic',
     mnemonic,
-    path: walletPath(index),
+    path: receive.path,
     index,
-    ...keysFromPrivateKey(node.privateKey),
+    privateKey: receive.privateKey,
+    publicKey: receive.publicKey,
+    wif: ECPair.fromPrivateKey(receive.privateKey, { network: BITCOIN_NETWORK, compressed: true }).toWIF(),
+    address: receive.address,
+    outputScript: receive.outputScript,
     tpub: account.publicExtendedKey,
     vpub: vpubNode.publicExtendedKey,
+    change,
+    nextChange,
+    owned: new Map([receive, ...change, nextChange].map((a) => [a.address, a])),
   };
 }
 
-/** Chiave singola importata come WIF di rete test: niente frase, niente derivazione. */
+/** Chiave singola importata come WIF di rete test: niente frase, niente derivazione, il resto torna lì. */
 export function keysFromWif(wif: string): WalletKeys {
   const pair = ECPair.fromWIF(wif, BITCOIN_NETWORK);
   if (!pair.privateKey) throw new Error('WIF senza chiave privata');
+  const receive = ownedAddress(pair.privateKey, pair.publicKey, null, 'receive', 0);
   return {
     kind: 'wif',
     mnemonic: null,
     path: null,
     index: null,
-    ...keysFromPrivateKey(pair.privateKey),
+    privateKey: receive.privateKey,
+    publicKey: receive.publicKey,
+    wif: pair.toWIF(),
+    address: receive.address,
+    outputScript: receive.outputScript,
     tpub: null,
     vpub: null,
+    change: [],
+    nextChange: receive,
+    owned: new Map([[receive.address, receive]]),
   };
 }
 
 export function keysFromStored(wallet: StoredWallet): WalletKeys {
-  return wallet.kind === 'mnemonic' ? keysFromMnemonic(wallet.mnemonic, activeIndex(wallet)) : keysFromWif(wallet.wif);
+  if (wallet.kind !== 'mnemonic') return keysFromWif(wallet.wif);
+  const index = activeIndex(wallet);
+  return keysFromMnemonic(wallet.mnemonic, index, changeUsed(wallet, index));
 }
 
 // ---------------------------------------------------------------------------
@@ -181,14 +259,34 @@ export function withWalletCount(wallet: StoredWallet, count: number): StoredWall
   return { ...wallet, count: Math.min(Math.max(count, 1), CONFIG.MAX_WALLETS) };
 }
 
-/** Indirizzo del wallet `index` ricavato dalla frase. */
+/** Indirizzo di ricezione del wallet `index` ricavato dalla frase. */
 export function walletAddress(mnemonic: string, index: number): string {
-  return keysFromMnemonic(mnemonic, index).address;
+  return addressAt(mnemonic, walletPath(index), 'receive', index).address;
+}
+
+/** Indirizzo di resto `k` del wallet `index`. */
+export function changeAddress(mnemonic: string, index: number, k: number): string {
+  return addressAt(mnemonic, changePath(index, k), 'change', k).address;
+}
+
+/** Quanti indirizzi di resto ha già usato il wallet `index`. */
+export function changeUsed(wallet: StoredWallet, index: number): number {
+  if (wallet.kind !== 'mnemonic') return 0;
+  const used = wallet.change?.[index] ?? 0;
+  return Number.isInteger(used) && used > 0 ? used : 0;
+}
+
+/** Segna come usati i primi `count` indirizzi di resto del wallet `index` (non torna mai indietro). */
+export function withChangeUsed(wallet: StoredWallet, index: number, count: number): StoredWallet {
+  if (wallet.kind !== 'mnemonic' || count <= changeUsed(wallet, index)) return wallet;
+  const change = Array.from({ length: Math.max(walletCount(wallet), index + 1) }, (_, i) => changeUsed(wallet, i));
+  change[index] = count;
+  return { ...wallet, change };
 }
 
 /** Firmatario per bitcoinjs-lib. */
-export function signerFor(keys: WalletKeys): ECPairInterface {
-  return ECPair.fromPrivateKey(keys.privateKey, { network: BITCOIN_NETWORK, compressed: true });
+export function signerFor(key: { privateKey: Uint8Array }): ECPairInterface {
+  return ECPair.fromPrivateKey(key.privateKey, { network: BITCOIN_NETWORK, compressed: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +391,8 @@ function isStoredWallet(value: unknown): value is StoredWallet {
   if (w.v !== 1 || typeof w.createdAt !== 'number') return false;
   if (w.kind === 'mnemonic') {
     const optionalInt = (n: unknown) => n === undefined || Number.isInteger(n);
-    return typeof w.mnemonic === 'string' && optionalInt(w.count) && optionalInt(w.active);
+    const changeOk = w.change === undefined || (Array.isArray(w.change) && w.change.every((n) => Number.isInteger(n) && n >= 0));
+    return typeof w.mnemonic === 'string' && optionalInt(w.count) && optionalInt(w.active) && changeOk;
   }
   if (w.kind === 'wif') return typeof w.wif === 'string';
   return false;

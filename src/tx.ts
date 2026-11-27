@@ -1,7 +1,7 @@
 import { Psbt } from 'bitcoinjs-lib';
 import { CONFIG } from './config';
 import { BITCOIN_NETWORK } from './networks';
-import { signerFor, type WalletKeys } from './wallet';
+import { signerFor, type OwnedAddress, type WalletKeys } from './wallet';
 
 /** Una "moneta" che il wallet può spendere (confermata o no, dall'API o dallo stato locale). */
 export interface SpendableUtxo {
@@ -12,6 +12,8 @@ export interface SpendableUtxo {
   /** true se nota solo localmente (resto di una transazione appena inviata). */
   local: boolean;
   blockHeight?: number;
+  /** Indirizzo del wallet su cui si trova (ricezione o resto): decide quale chiave la firma. */
+  address: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +99,7 @@ export interface TxPlan {
   feeRate: number;
   /** Dimensione virtuale stimata. */
   vsize: number;
-  /** Resto che torna al proprio indirizzo (0 se non c'è). */
+  /** Resto che torna al wallet, su un suo indirizzo di resto nuovo (0 se non c'è). */
   change: number;
   /** Resto sotto la soglia dust finito in fee. */
   dustToFee: number;
@@ -136,8 +138,8 @@ export function maxSendable(utxos: SpendableUtxo[], recipientScript: Uint8Array,
 
 /**
  * Prepara una transazione. Input: tutte le monete spendibili (consolidamento a ogni invio, così resta
- * un solo resto e una catena lineare). Output: destinatario + resto allo stesso indirizzo; un resto
- * sotto la soglia dust va in fee.
+ * un solo resto e una catena lineare). Output: destinatario + resto all'indirizzo `change` (un indirizzo
+ * nuovo dello stesso wallet); un resto sotto la soglia dust va in fee.
  */
 export function planTransaction(params: PlanParams): PlanResult {
   const { utxos, recipient, change, feeRate } = params;
@@ -220,24 +222,38 @@ export interface SignedTx {
 
 /**
  * Firma con Psbt usando witnessUtxo (valore + script), senza scaricare le transazioni precedenti.
+ * Ogni input è firmato con la chiave del suo indirizzo (ricezione o resto).
  * nSequence = 0xffffffff: nessuna sostituzione (RBF).
  */
-export function signPlan(plan: TxPlan, keys: WalletKeys): SignedTx {
+export function signPlan(plan: TxPlan, keys: Pick<WalletKeys, 'owned'>): SignedTx {
+  const owners = plan.inputs.map((input) => {
+    const owner = keys.owned.get(input.address);
+    if (!owner) throw new Error(`La moneta ${input.txid}:${input.vout} non è di questo wallet`);
+    return owner;
+  });
   const psbt = new Psbt({ network: BITCOIN_NETWORK });
   psbt.setVersion(2);
   psbt.setLocktime(0);
-  for (const input of plan.inputs) {
+  plan.inputs.forEach((input, i) => {
     psbt.addInput({
       hash: input.txid,
       index: input.vout,
       sequence: 0xffffffff,
-      witnessUtxo: { script: keys.outputScript, value: BigInt(input.value) },
+      witnessUtxo: { script: owners[i]!.outputScript, value: BigInt(input.value) },
     });
-  }
+  });
   for (const output of plan.outputs) {
     psbt.addOutput({ script: output.script, value: BigInt(output.value) });
   }
-  psbt.signAllInputs(signerFor(keys));
+  const signers = new Map<OwnedAddress, ReturnType<typeof signerFor>>();
+  owners.forEach((owner, i) => {
+    let signer = signers.get(owner);
+    if (!signer) {
+      signer = signerFor(owner);
+      signers.set(owner, signer);
+    }
+    psbt.signInput(i, signer);
+  });
   psbt.finalizeAllInputs();
   const tx = psbt.extractTransaction();
   return { txid: tx.getId(), hex: tx.toHex(), vsize: tx.virtualSize(), fee: Number(psbt.getFee()) };

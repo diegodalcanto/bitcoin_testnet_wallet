@@ -1,8 +1,9 @@
 import type { JSX } from 'preact';
+import { shortAddress } from '../../address';
 import { formatSats, shortTxid } from '../../format';
 import { explain, t } from '../../i18n/it';
 import { paths } from '../../state/router';
-import { balance, spendable } from '../../state/wallet';
+import { balance, keys, spendable } from '../../state/wallet';
 import { Btc } from '../common';
 import { SectionTitle } from '../explain';
 import { Icon } from '../icons';
@@ -11,6 +12,13 @@ import { Icon } from '../icons';
 export function Coins(): JSX.Element {
   const coins = spendable.value;
   const b = balance.value;
+  const owned = keys.value?.owned;
+  /** Su quale indirizzo del wallet sta la moneta: quello per ricevere o un resto. */
+  const where = (address: string) => {
+    const a = owned?.get(address);
+    const label = !a || a.role === 'receive' ? t.coins.onReceive : t.coins.onChange(a.index + 1);
+    return `${label} · ${shortAddress(address)}`;
+  };
   return (
     <div class="stack" style={{ gap: '16px' }}>
       <h1 class="page-title">{t.coins.title}</h1>
@@ -48,6 +56,9 @@ export function Coins(): JSX.Element {
                             : t.coins.confirmed
                           : t.coins.unconfirmed}
                     </span>
+                    <span class="tx-sub" style={{ display: 'block' }} data-testid="coin-address">
+                      {where(coin.address)}
+                    </span>
                     <span class="tx-sub mono" style={{ display: 'block' }}>
                       {t.coins.origin} {shortTxid(coin.txid)}:{coin.vout}
                     </span>
@@ -63,6 +74,9 @@ export function Coins(): JSX.Element {
       <section class="card">
         <SectionTitle topic="change">{explain.change.title}</SectionTitle>
         <p class="small">{t.coins.consolidation}</p>
+        <SectionTitle topic="changeAddresses" level={3}>
+          {explain.changeAddresses.title}
+        </SectionTitle>
       </section>
     </div>
   );

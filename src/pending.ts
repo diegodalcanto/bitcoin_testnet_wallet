@@ -13,10 +13,10 @@ export interface PendingTx {
   createdAt: number;
   /** Transazione grezza: serve per ritrasmetterla se un server non la conosce. */
   hex: string;
-  /** Monete spese da questa transazione (con il valore, per mostrarle nel dettaglio). */
-  spent: (Outpoint & { value?: number })[];
-  /** Output verso il proprio indirizzo (di solito il resto). */
-  ownOutputs: { vout: number; value: number }[];
+  /** Monete spese da questa transazione, con valore e indirizzo del wallet su cui stavano. */
+  spent: SpentCoin[];
+  /** Output verso indirizzi del wallet: di solito il resto, su un indirizzo di resto nuovo. */
+  ownOutputs: OwnOutput[];
   /** Per lo storico: destinatario, importo, fee, dimensione. */
   recipient: string;
   amount: number;
@@ -29,19 +29,38 @@ export interface Outpoint {
   vout: number;
 }
 
+export interface SpentCoin extends Outpoint {
+  value?: number;
+  address: string;
+}
+
+export interface OwnOutput {
+  vout: number;
+  value: number;
+  address: string;
+}
+
+/** UTXO dell'API con l'indirizzo del wallet a cui appartiene. */
+export type AddressedUtxo = EsploraUtxo & { address: string };
+
+/** Insieme degli indirizzi del wallet (un Set o la mappa delle chiavi). */
+export interface AddressSet {
+  has(address: string): boolean;
+}
+
 export function outpointKey(o: Outpoint): string {
   return `${o.txid}:${o.vout}`;
 }
 
-/** Voce locale per una transazione appena trasmessa. */
-export function pendingFromPlan(plan: TxPlan, signed: SignedTx, ownAddress: string, now: number): PendingTx {
+/** Voce locale per una transazione appena trasmessa. `own` = indirizzi del wallet (ricezione e resti). */
+export function pendingFromPlan(plan: TxPlan, signed: SignedTx, own: AddressSet, now: number): PendingTx {
   const recipient = plan.outputs.find((o) => o.kind === 'recipient');
   return {
     txid: signed.txid,
     createdAt: now,
     hex: signed.hex,
-    spent: plan.inputs.map(({ txid, vout, value }) => ({ txid, vout, value })),
-    ownOutputs: plan.outputs.flatMap((o, vout) => (o.address === ownAddress ? [{ vout, value: o.value }] : [])),
+    spent: plan.inputs.map(({ txid, vout, value, address }) => ({ txid, vout, value, address })),
+    ownOutputs: plan.outputs.flatMap((o, vout) => (own.has(o.address) ? [{ vout, value: o.value, address: o.address }] : [])),
     recipient: recipient?.address ?? '',
     amount: plan.amount,
     fee: signed.fee,
@@ -53,8 +72,10 @@ export function pendingFromPlan(plan: TxPlan, signed: SignedTx, ownAddress: stri
  * Monete spendibili = UTXO dell'API (confermati e no)
  *   + output verso di sé delle transazioni inviate localmente (non confermati)
  *   − monete già spese da transazioni inviate localmente.
+ * `apiSpent` = monete spese da transazioni che l'API conosce (gli input del suo storico): un resto
+ * locale già speso non si conta, anche se la voce locale che lo ha creato c'è ancora.
  */
-export function mergeUtxos(apiUtxos: EsploraUtxo[], pending: PendingTx[]): SpendableUtxo[] {
+export function mergeUtxos(apiUtxos: AddressedUtxo[], pending: PendingTx[], apiSpent: ReadonlySet<string> = new Set()): SpendableUtxo[] {
   const spentLocally = new Set(pending.flatMap((p) => p.spent.map(outpointKey)));
   const byKey = new Map<string, SpendableUtxo>();
   for (const u of apiUtxos) {
@@ -65,12 +86,15 @@ export function mergeUtxos(apiUtxos: EsploraUtxo[], pending: PendingTx[]): Spend
       confirmed: u.status.confirmed,
       local: false,
       blockHeight: u.status.block_height,
+      address: u.address,
     });
   }
   for (const p of pending) {
     for (const o of p.ownOutputs) {
       const key = outpointKey({ txid: p.txid, vout: o.vout });
-      if (!byKey.has(key)) byKey.set(key, { txid: p.txid, vout: o.vout, value: o.value, confirmed: false, local: true });
+      if (!byKey.has(key) && !apiSpent.has(key)) {
+        byKey.set(key, { txid: p.txid, vout: o.vout, value: o.value, confirmed: false, local: true, address: o.address });
+      }
     }
   }
   return [...byKey.entries()]
@@ -93,18 +117,27 @@ export interface ApiView {
   utxos: EsploraUtxo[];
   /** txid presenti nello storico dell'API (se disponibile). */
   txids?: Iterable<string>;
+  /** Monete ("txid:vout") spese dalle transazioni dello storico dell'API. */
+  spentOutpoints?: Iterable<string>;
 }
 
 /**
- * L'API "riflette" una transazione locale quando la conosce (nello storico o tra gli UTXO)
- * e nessuna delle monete che ha speso risulta ancora non spesa nella stessa vista.
+ * L'API "riflette" una transazione locale quando la conosce (nello storico o tra gli UTXO), nessuna
+ * delle monete che ha speso risulta ancora non spesa nella stessa vista e i suoi output verso il wallet
+ * (il resto, su un altro indirizzo) compaiono tra gli UTXO o risultano spesi da una transazione nota.
+ * Così la voce locale resta finché il wallet non ha letto anche l'indirizzo del resto.
  */
 export function isReflected(p: PendingTx, view: ApiView): boolean {
   const apiTxids = new Set(view.txids ?? []);
   const knows = apiTxids.has(p.txid) || view.utxos.some((u) => u.txid === p.txid);
   if (!knows) return false;
   const unspent = new Set(view.utxos.map(outpointKey));
-  return !p.spent.some((o) => unspent.has(outpointKey(o)));
+  if (p.spent.some((o) => unspent.has(outpointKey(o)))) return false;
+  const spent = new Set(view.spentOutpoints ?? []);
+  return p.ownOutputs.every((o) => {
+    const key = outpointKey({ txid: p.txid, vout: o.vout });
+    return unspent.has(key) || spent.has(key);
+  });
 }
 
 /** Elimina le voci locali riflesse dall'API o più vecchie di 30 minuti. */
@@ -133,7 +166,13 @@ export function inBroadcastOrder(pending: PendingTx[]): PendingTx[] {
   return [...pending].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-function isPendingTx(value: unknown): value is PendingTx {
+/** Voce salvata: le versioni precedenti non avevano l'indirizzo su monete spese e output. */
+type StoredPendingTx = Omit<PendingTx, 'spent' | 'ownOutputs'> & {
+  spent: (Outpoint & { value?: number; address?: string })[];
+  ownOutputs: { vout: number; value: number; address?: string }[];
+};
+
+function isPendingTx(value: unknown): value is StoredPendingTx {
   if (!value || typeof value !== 'object') return false;
   const p = value as Record<string, unknown>;
   return (
@@ -145,13 +184,26 @@ function isPendingTx(value: unknown): value is PendingTx {
   );
 }
 
-/** Lo stato locale sta in localStorage, separato per rete. */
-export function loadPending(kv: KeyValueStore, networkKey: string): PendingTx[] {
-  const value = readJson<unknown>(kv, KEYS.pending(networkKey));
-  return Array.isArray(value) ? value.filter(isPendingTx) : [];
+/**
+ * Lo stato locale sta in localStorage, separato per rete e per wallet. Le voci salvate prima dei resti
+ * su indirizzi nuovi riguardano solo l'indirizzo di ricezione `receiveAddress`.
+ */
+export function loadPending(kv: KeyValueStore, scopeKey: string, receiveAddress: string): PendingTx[] {
+  const value = readJson<unknown>(kv, KEYS.pending(scopeKey));
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPendingTx).map((p) => ({
+    ...p,
+    spent: p.spent.map((o) => ({ ...o, address: o.address ?? receiveAddress })),
+    ownOutputs: p.ownOutputs.map((o) => ({ ...o, address: o.address ?? receiveAddress })),
+  }));
 }
 
-export function savePending(kv: KeyValueStore, networkKey: string, pending: PendingTx[]): void {
-  if (pending.length === 0) kv.remove(KEYS.pending(networkKey));
-  else writeJson(kv, KEYS.pending(networkKey), pending);
+/** Indirizzi del wallet toccati da una transazione locale (monete spese e output propri). */
+export function pendingAddresses(pending: PendingTx[]): Set<string> {
+  return new Set(pending.flatMap((p) => [...p.spent.map((o) => o.address), ...p.ownOutputs.map((o) => o.address)]));
+}
+
+export function savePending(kv: KeyValueStore, scopeKey: string, pending: PendingTx[]): void {
+  if (pending.length === 0) kv.remove(KEYS.pending(scopeKey));
+  else writeJson(kv, KEYS.pending(scopeKey), pending);
 }

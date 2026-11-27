@@ -20,6 +20,11 @@ export const CONFIG = {
   POLL_JITTER_MS: 3_000,
   /** Ogni quante letture degli UTXO si controlla anche l'ultimo blocco. */
   TIP_CHECK_EVERY: 4,
+  /**
+   * Ogni quanti aggiornamenti si legge anche, a turno, uno degli indirizzi di resto che di solito non
+   * si leggono (già svuotati), nel caso qualcuno ci abbia mandato dei sats.
+   */
+  COLD_CHECK_EVERY: 8,
   /** Attesa massima dopo errori ripetuti (attesa crescente). */
   BACKOFF_MAX_MS: 120_000,
   /** Ricarica dall'API dopo un invio. */
@@ -36,15 +41,21 @@ export const CONFIG = {
   /** Oltre questo numero di conferme si mostra "6+". */
   MAX_CONFIRMATIONS_SHOWN: 6,
 
-  /** Derivazione BIP84 per reti di test (coin type 1): il wallet n (da 0) usa l'indirizzo RECEIVE_PATH/n. */
+  /** Derivazione BIP84 per reti di test (coin type 1): il wallet n (da 0) riceve sempre su RECEIVE_PATH/n. */
   ACCOUNT_PATH: "m/84'/1'/0'",
   RECEIVE_PATH: "m/84'/1'/0'/0",
+  /**
+   * Resti: a ogni invio il resto va a un indirizzo nuovo `CHANGE_PATH_PREFIX/n'/1/k` (k = 0, 1, 2…).
+   * Per il Wallet 1 (n = 0) è la catena dei resti standard dell'account 0, come in ogni wallet BIP84;
+   * il wallet n usa quella dell'account n, così i resti di wallet diversi non si mescolano.
+   */
+  CHANGE_PATH_PREFIX: "m/84'/1'",
   /**
    * Quanti wallet si possono ricavare dallo stesso seed. Restando entro il "gap limit" di 20 indirizzi,
    * qualsiasi wallet BIP84 li ritrova tutti dalle 12 parole.
    */
   MAX_WALLETS: 20,
-  /** Ripristino: si cercano altri wallet usati finché se ne trovano tanti di fila mai usati. */
+  /** Ripristino: si cercano altri wallet (e altri resti) usati finché se ne trovano tanti di fila mai usati. */
   DISCOVERY_GAP: 3,
 
   /** Onboarding: quante parole far confermare. */

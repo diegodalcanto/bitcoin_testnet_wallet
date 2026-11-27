@@ -3,7 +3,7 @@ import { payments, script as bscript, Transaction } from 'bitcoinjs-lib';
 import { describe, expect, it } from 'vitest';
 import { checkAddress } from './address';
 import { BITCOIN_NETWORK } from './networks';
-import { ABANDON_ADDRESS, fakeTxid, KEY_ONE_WIF_TESTNET, TESTNET_ADDRESSES } from './test/fixtures';
+import { ABANDON_ADDRESS, ABANDON_CHANGE_0, ABANDON_CHANGE_1, ABANDON_MNEMONIC, fakeTxid, KEY_ONE_WIF_TESTNET, TESTNET_ADDRESSES } from './test/fixtures';
 import {
   chooseFeeRate,
   classifyBroadcastError,
@@ -15,7 +15,7 @@ import {
   signPlan,
   type SpendableUtxo,
 } from './tx';
-import { keysFromWif } from './wallet';
+import { keysFromMnemonic, keysFromWif } from './wallet';
 
 const keys = keysFromWif(KEY_ONE_WIF_TESTNET);
 const change = { address: keys.address, script: keys.outputScript };
@@ -28,8 +28,8 @@ function target(address: string) {
 
 const recipient = target(ABANDON_ADDRESS);
 
-function utxo(n: number, value: number, confirmed = true): SpendableUtxo {
-  return { txid: fakeTxid(n), vout: n % 3, value, confirmed, local: false };
+function utxo(n: number, value: number, confirmed = true, address = keys.address): SpendableUtxo {
+  return { txid: fakeTxid(n), vout: n % 3, value, confirmed, local: false, address };
 }
 
 describe('dimensioni e fee', () => {
@@ -213,6 +213,44 @@ describe('signPlan', () => {
       const hash = tx.hashForWitnessV0(i, scriptCode, BigInt(utxos[i]!.value), hashType);
       expect(ecc.verify(hash, keys.publicKey, signature)).toBe(true);
     });
+  });
+});
+
+describe('signPlan con monete su indirizzi diversi dello stesso wallet', () => {
+  // Wallet da 12 parole con 2 resti già usati: monete sull'indirizzo di ricezione e su entrambi i resti.
+  const hd = keysFromMnemonic(ABANDON_MNEMONIC, 0, 2);
+  const coins = [utxo(11, 4_000, true, hd.address), utxo(12, 3_000, false, ABANDON_CHANGE_0), utxo(13, 2_000, false, ABANDON_CHANGE_1)];
+  const planned = planTransaction({
+    utxos: coins,
+    recipient,
+    change: { address: hd.nextChange.address, script: hd.nextChange.outputScript },
+    feeRate: 2,
+    amount: 5_000,
+  });
+  if (!planned.ok) throw new Error('piano non valido');
+
+  it('ogni input è firmato dalla chiave del suo indirizzo e il resto va al prossimo indirizzo di resto', () => {
+    expect(hd.change.map((c) => c.address)).toEqual([ABANDON_CHANGE_0, ABANDON_CHANGE_1]);
+    const signed = signPlan(planned.plan, hd);
+    const tx = Transaction.fromHex(signed.hex);
+    tx.ins.forEach((input, i) => {
+      const owner = hd.owned.get(coins[i]!.address)!;
+      const [sigWithHashType, pubkey] = input.witness as [Uint8Array, Uint8Array];
+      expect(Buffer.from(pubkey).equals(Buffer.from(owner.publicKey))).toBe(true);
+      const { signature, hashType } = bscript.signature.decode(sigWithHashType);
+      const scriptCode = payments.p2pkh({ pubkey: owner.publicKey, network: BITCOIN_NETWORK }).output!;
+      const hash = tx.hashForWitnessV0(i, scriptCode, BigInt(coins[i]!.value), hashType);
+      expect(ecc.verify(hash, owner.publicKey, signature)).toBe(true);
+    });
+    const changeOut = planned.plan.outputs.find((o) => o.kind === 'change')!;
+    expect(changeOut.address).toBe(hd.nextChange.address);
+    expect(hd.owned.has(changeOut.address)).toBe(true);
+    expect([hd.address, ABANDON_CHANGE_0, ABANDON_CHANGE_1]).not.toContain(changeOut.address);
+  });
+
+  it('rifiuta di firmare una moneta che non è del wallet', () => {
+    const foreign = { ...planned.plan, inputs: [...planned.plan.inputs, utxo(14, 1_000, true, TESTNET_ADDRESSES.p2wpkh)] };
+    expect(() => signPlan(foreign, hd)).toThrow(/non è di questo wallet/);
   });
 });
 
