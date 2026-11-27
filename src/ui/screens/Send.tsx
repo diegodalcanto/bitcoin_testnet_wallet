@@ -63,7 +63,7 @@ function sendErrorText(error: SendError): string {
   }
 }
 
-function Summary({ plan }: { plan: TxPlan }): JSX.Element {
+function Summary({ plan, ownAddress }: { plan: TxPlan; ownAddress: string }): JSX.Element {
   const recipient = plan.outputs.find((o) => o.kind === 'recipient');
   const rate = String(plan.feeRate);
   return (
@@ -118,7 +118,9 @@ function Summary({ plan }: { plan: TxPlan }): JSX.Element {
             <li class={`io-item${output.kind === 'change' ? ' mine' : ''}`} key={i}>
               <span class="addr">
                 <span class="mono">{shortAddress(output.address)}</span>
-                <span class="tag">{output.kind === 'change' ? t.send.outputChange : t.send.outputRecipient}</span>
+                <span class="tag">
+                  {output.kind === 'recipient' ? t.send.outputRecipient : output.address === ownAddress ? t.send.outputChangeSame : t.send.outputChange}
+                </span>
               </span>
               <span class="val">{formatSats(output.value)}</span>
             </li>
@@ -212,7 +214,7 @@ export function Send(): JSX.Element | null {
     return planTransaction({
       utxos: spendable.value,
       recipient,
-      change: { address: k.address, script: k.outputScript },
+      change: { address: k.nextChange.address, script: k.nextChange.outputScript },
       feeRate,
       // testo non numerico → NaN → errore "importo non valido"
       amount: amount ?? Number.NaN,
@@ -377,7 +379,7 @@ export function Send(): JSX.Element | null {
             <RichMessage kind="error" text={addressError} />
           </div>
         )}
-        {check.ok && check.address === k.address && <Message kind="info">{t.send.selfWarning}</Message>}
+        {check.ok && k.owned.has(check.address) && <Message kind="info">{t.send.selfWarning}</Message>}
       </section>
 
       <section class="card stack">
@@ -430,7 +432,7 @@ export function Send(): JSX.Element | null {
         {fee && !fee.fromApi && <p class="muted small">{t.send.feeFallback}</p>}
       </section>
 
-      {plan?.ok && <Summary plan={plan.plan} />}
+      {plan?.ok && <Summary plan={plan.plan} ownAddress={k.address} />}
 
       {ready && (
         <>

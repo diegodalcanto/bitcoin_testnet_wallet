@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { formatBtc, formatMinutes, formatSats, formatSignedSats, groupChars, minutesSince, parseSatsInput, shortTxid } from './format';
+import {
+  formatBtc,
+  formatMinutes,
+  formatSats,
+  formatShortDateTime,
+  formatSignedSats,
+  groupChars,
+  minutesSince,
+  parseSatsInput,
+  shortTxid,
+} from './format';
 
 describe('formatSats / formatBtc', () => {
   it('separatore delle migliaia sempre presente', () => {
@@ -49,6 +59,14 @@ describe('tempi e testi', () => {
     expect(formatMinutes(4)).toBe('4 min');
     expect(formatMinutes(60)).toBe('1 h');
     expect(formatMinutes(65)).toBe('1 h 5 min');
+  });
+
+  it('data e ora brevi nello storico: l\'anno solo se non è quello in corso', () => {
+    const when = Date.UTC(2026, 9, 25, 12, 5) / 1000;
+    const now = Date.UTC(2026, 11, 1);
+    expect(formatShortDateTime(when, now)).not.toMatch(/2026/);
+    expect(formatShortDateTime(when, now)).toMatch(/^25 ott/);
+    expect(formatShortDateTime(when, Date.UTC(2027, 0, 2))).toMatch(/2026/);
   });
 
   it('raggruppa e abbrevia', () => {

@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { useState } from 'preact/hooks';
 import { CONFIG } from '../../config';
 import { formatMinutes, formatSats, formatTime, minutesSince } from '../../format';
 import { t } from '../../i18n/it';
@@ -113,7 +114,9 @@ function NetworkStatus(): JSX.Element {
 }
 
 function History(): JSX.Element {
-  const items = history.value.slice(0, CONFIG.HOME_TX_COUNT);
+  const [showAll, setShowAll] = useState(false);
+  const all = history.value;
+  const items = showAll ? all : all.slice(0, CONFIG.HOME_TX_COUNT);
   const tipHeight = chain.value.tip?.height ?? null;
   return (
     <section class="card">
@@ -121,18 +124,25 @@ function History(): JSX.Element {
       {items.length === 0 ? (
         <p class="empty">{neverLoaded.value ? t.common.loading : t.home.empty}</p>
       ) : (
-        <ul class="tx-list">
+        <ul class="tx-list" data-testid="history">
           {items.map((item) => (
             <TxRow key={item.txid} item={item} tipHeight={tipHeight} />
           ))}
         </ul>
+      )}
+      {all.length > CONFIG.HOME_TX_COUNT && (
+        <button type="button" class="btn btn-ghost btn-block" onClick={() => setShowAll(!showAll)} data-testid="history-toggle">
+          <Icon name="chevronDown" class={showAll ? 'flip' : ''} />
+          {showAll ? t.home.showLess : t.home.showAll(all.length)}
+        </button>
       )}
     </section>
   );
 }
 
 export function Home(): JSX.Element {
-  const pull = usePullToRefresh(() => refresh({ full: true }));
+  // "Trascina per aggiornare" rilegge tutti gli indirizzi del wallet, anche i resti già spesi.
+  const pull = usePullToRefresh(() => refresh({ sweep: true }));
   return (
     <div>
       <div class="ptr" style={{ height: `${pull.distance}px` }} aria-hidden={pull.state === 'idle'}>

@@ -1,7 +1,6 @@
 import { Transaction } from 'bitcoinjs-lib';
 import { describe, expect, it } from 'vitest';
 import { checkAddress } from './address';
-import type { EsploraUtxo } from './esplora';
 import {
   dropWithDescendants,
   inBroadcastOrder,
@@ -9,30 +8,43 @@ import {
   loadPending,
   mergeUtxos,
   outpointKey,
+  pendingAddresses,
   pendingFromPlan,
   prunePending,
   savePending,
+  type AddressedUtxo,
   type PendingTx,
 } from './pending';
 import { memoryStore } from './storage';
-import { ABANDON_ADDRESS, fakeTxid, KEY_ONE_WIF_TESTNET, TESTNET_ADDRESSES } from './test/fixtures';
+import {
+  ABANDON_ADDRESS,
+  ABANDON_CHANGE_0,
+  ABANDON_MNEMONIC,
+  fakeTxid,
+  KEY_ONE_ADDRESS,
+  KEY_ONE_WIF_TESTNET,
+  TESTNET_ADDRESSES,
+} from './test/fixtures';
 import { planTransaction, signPlan } from './tx';
-import { keysFromWif } from './wallet';
+import { keysFromMnemonic, keysFromWif } from './wallet';
 
 const A = fakeTxid(0xa);
 const B = fakeTxid(0xb);
+/** Indirizzo di ricezione del wallet dei test e uno dei suoi resti. */
+const ME = KEY_ONE_ADDRESS;
+const CHANGE = ABANDON_CHANGE_0;
 
-function apiUtxo(txid: string, vout: number, value: number, confirmed = true, height = 100): EsploraUtxo {
-  return { txid, vout, value, status: confirmed ? { confirmed: true, block_height: height } : { confirmed: false } };
+function apiUtxo(txid: string, vout: number, value: number, confirmed = true, height = 100, address = ME): AddressedUtxo {
+  return { txid, vout, value, status: confirmed ? { confirmed: true, block_height: height } : { confirmed: false }, address };
 }
 
-function pendingTx(txid: string, spent: [string, number][], ownOutputs: [number, number][], createdAt = 0): PendingTx {
+function pendingTx(txid: string, spent: [string, number][], ownOutputs: [number, number][], createdAt = 0, changeAddress = ME): PendingTx {
   return {
     txid,
     createdAt,
     hex: '',
-    spent: spent.map(([t, vout]) => ({ txid: t, vout })),
-    ownOutputs: ownOutputs.map(([vout, value]) => ({ vout, value })),
+    spent: spent.map(([t, vout]) => ({ txid: t, vout, address: ME })),
+    ownOutputs: ownOutputs.map(([vout, value]) => ({ vout, value, address: changeAddress })),
     recipient: ABANDON_ADDRESS,
     amount: 1_000,
     fee: 200,
@@ -55,12 +67,20 @@ describe('mergeUtxos', () => {
 
   it('aggiunge il resto locale e toglie le monete spese localmente', () => {
     const merged = mergeUtxos([apiUtxo(A, 0, 10_000)], [pendingTx(P1, [[A, 0]], [[1, 6_000]])]);
-    expect(merged).toEqual([{ txid: P1, vout: 1, value: 6_000, confirmed: false, local: true }]);
+    expect(merged).toEqual([{ txid: P1, vout: 1, value: 6_000, confirmed: false, local: true, address: ME }]);
+  });
+
+  it('il resto locale su un indirizzo nuovo porta con sé il suo indirizzo (per firmarlo con la chiave giusta)', () => {
+    const merged = mergeUtxos([apiUtxo(A, 0, 10_000), apiUtxo(B, 0, 700, true, 90, CHANGE)], [pendingTx(P1, [[A, 0]], [[1, 6_000]], 0, CHANGE)]);
+    expect(merged.map((u) => [u.txid, u.address, u.local])).toEqual([
+      [B, CHANGE, false],
+      [P1, CHANGE, true],
+    ]);
   });
 
   it('non conta due volte un resto che l\'API ha già visto', () => {
     const merged = mergeUtxos([apiUtxo(P1, 1, 6_000, false)], [pendingTx(P1, [[A, 0]], [[1, 6_000]])]);
-    expect(merged).toEqual([{ txid: P1, vout: 1, value: 6_000, confirmed: false, local: false, blockHeight: undefined }]);
+    expect(merged).toEqual([{ txid: P1, vout: 1, value: 6_000, confirmed: false, local: false, blockHeight: undefined, address: ME }]);
   });
 
   it('catena di invii con l\'API ferma: resta solo l\'ultimo resto', () => {
@@ -72,13 +92,23 @@ describe('mergeUtxos', () => {
   it('una transazione "Tutto" non lascia resto', () => {
     expect(mergeUtxos([apiUtxo(A, 0, 10_000)], [pendingTx(P1, [[A, 0]], [])])).toEqual([]);
   });
+
+  it('un resto locale già speso da una transazione che l\'API conosce non si conta', () => {
+    expect(mergeUtxos([], [pendingTx(P1, [[A, 0]], [[1, 6_000]])], new Set([`${P1}:1`]))).toEqual([]);
+  });
 });
 
 describe('isReflected e prunePending', () => {
   const p1 = pendingTx(P1, [[A, 0]], [[1, 6_000]], 1_000);
 
-  it('riflessa quando lo storico la conosce e le sue monete risultano spese', () => {
-    expect(isReflected(p1, { utxos: [], txids: [P1] })).toBe(true);
+  it('riflessa quando lo storico la conosce, le sue monete risultano spese e il suo resto è già stato speso', () => {
+    expect(isReflected(p1, { utxos: [], txids: [P1], spentOutpoints: [`${P1}:1`] })).toBe(true);
+  });
+
+  it('non riflessa finché il suo resto (su un altro indirizzo) non compare nella vista', () => {
+    // l'indirizzo di ricezione dice che la moneta è spesa, ma l'indirizzo del resto non è ancora stato letto
+    expect(isReflected(p1, { utxos: [], txids: [P1] })).toBe(false);
+    expect(isReflected(p1, { utxos: [apiUtxo(P1, 1, 6_000, false, 100, CHANGE)], txids: [P1] })).toBe(true);
   });
 
   it('riflessa quando il suo resto compare tra gli UTXO', () => {
@@ -115,17 +145,25 @@ describe('dropWithDescendants e ordine', () => {
 describe('persistenza separata per rete', () => {
   it('salva e rilegge; una rete non vede le voci dell\'altra', () => {
     const kv = memoryStore();
-    const list = [pendingTx(P1, [[A, 0]], [[1, 6_000]])];
+    const list = [pendingTx(P1, [[A, 0]], [[1, 6_000]], 0, CHANGE)];
     savePending(kv, 'signet', list);
-    expect(loadPending(kv, 'signet')).toEqual(list);
-    expect(loadPending(kv, 'testnet4')).toEqual([]);
+    expect(loadPending(kv, 'signet', ME)).toEqual(list);
+    expect(loadPending(kv, 'testnet4', ME)).toEqual([]);
     savePending(kv, 'signet', []);
     expect(kv.get('tw.pending.signet')).toBeNull();
   });
 
+  it('le voci salvate dalle versioni precedenti (senza indirizzi) riguardano l\'indirizzo di ricezione', () => {
+    const old = [{ ...pendingTx(P1, [[A, 0]], [[1, 6_000]]), spent: [{ txid: A, vout: 0, value: 10_000 }], ownOutputs: [{ vout: 1, value: 6_000 }] }];
+    const loaded = loadPending(memoryStore({ 'tw.pending.signet.x': JSON.stringify(old) }), 'signet.x', ME);
+    expect(loaded[0]!.spent).toEqual([{ txid: A, vout: 0, value: 10_000, address: ME }]);
+    expect(loaded[0]!.ownOutputs).toEqual([{ vout: 1, value: 6_000, address: ME }]);
+    expect(pendingAddresses(loaded)).toEqual(new Set([ME]));
+  });
+
   it('ignora dati corrotti', () => {
-    expect(loadPending(memoryStore({ 'tw.pending.signet': 'boh' }), 'signet')).toEqual([]);
-    expect(loadPending(memoryStore({ 'tw.pending.signet': '[{"txid":1}]' }), 'signet')).toEqual([]);
+    expect(loadPending(memoryStore({ 'tw.pending.signet': 'boh' }), 'signet', ME)).toEqual([]);
+    expect(loadPending(memoryStore({ 'tw.pending.signet': '[{"txid":1}]' }), 'signet', ME)).toEqual([]);
   });
 });
 
@@ -159,7 +197,7 @@ describe('5 invii consecutivi senza aspettare conferme', () => {
         expect(spentEver.has(key)).toBe(false);
         spentEver.add(key);
       }
-      pending = [...pending, pendingFromPlan(planned.plan, signed, keys.address, i * 1_000)];
+      pending = [...pending, pendingFromPlan(planned.plan, signed, keys.owned, i * 1_000)];
       expectedBalance -= 5_000 + i + signed.fee;
       previousTxid = signed.txid;
     });
@@ -175,7 +213,36 @@ describe('5 invii consecutivi senza aspettare conferme', () => {
     const self = { address: keys.address, script: keys.outputScript };
     const planned = planTransaction({ utxos: mergeUtxos([apiUtxo(A, 0, 10_000)], []), recipient: self, change: self, feeRate: 2, amount: 2_000 });
     if (!planned.ok) throw new Error('piano non valido');
-    const entry = pendingFromPlan(planned.plan, signPlan(planned.plan, keys), keys.address, 0);
+    const entry = pendingFromPlan(planned.plan, signPlan(planned.plan, keys), keys.owned, 0);
     expect(entry.ownOutputs.map((o) => o.value)).toEqual([2_000, 10_000 - 2_000 - planned.plan.fee]);
+  });
+
+  it('wallet da 12 parole: 5 invii di fila, ogni resto su un indirizzo nuovo, ogni moneta firmata con la sua chiave', () => {
+    const receive = keysFromMnemonic(ABANDON_MNEMONIC).address;
+    const api = [apiUtxo(A, 0, 100_000, true, 100, receive)];
+    let pending: PendingTx[] = [];
+    const changeAddresses: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const keys = keysFromMnemonic(ABANDON_MNEMONIC, 0, i); // i resti già usati
+      const spendable = mergeUtxos(api, pending);
+      expect(spendable).toHaveLength(1);
+      // la moneta da spendere sta sul resto dell'invio precedente (o sull'indirizzo di ricezione)
+      expect(spendable[0]!.address).toBe(i === 0 ? receive : changeAddresses[i - 1]);
+      const check = checkAddress(TESTNET_ADDRESSES.p2tr);
+      if (!check.ok) throw new Error('indirizzo non valido');
+      const change = { address: keys.nextChange.address, script: keys.nextChange.outputScript };
+      const planned = planTransaction({ utxos: spendable, recipient: check, change, feeRate: 2, amount: 1_000 });
+      if (!planned.ok) throw new Error(planned.error.code);
+      const signed = signPlan(planned.plan, keys);
+      const entry = pendingFromPlan(planned.plan, signed, keys.owned, i);
+      expect(entry.spent[0]!.address).toBe(spendable[0]!.address);
+      expect(entry.ownOutputs).toEqual([{ vout: 1, value: planned.plan.change, address: keys.nextChange.address }]);
+      changeAddresses.push(keys.nextChange.address);
+      pending = [...pending, entry];
+    }
+    expect(new Set(changeAddresses).size).toBe(5);
+    expect(changeAddresses[0]).toBe(CHANGE);
+    expect(changeAddresses).not.toContain(receive);
+    expect(pendingAddresses(pending)).toEqual(new Set([receive, ...changeAddresses]));
   });
 });

@@ -37,6 +37,8 @@ export class MockEsplora {
     this.broadcasts = [];
     this.requests = [];
     this.rateLimitNext = 0;
+    /** true: la mempool di /address/:a/txs dalla più vecchia (un ordine non cronologico, come capita davvero). */
+    this.mempoolOldestFirst = false;
   }
 
   tipHash() {
@@ -183,7 +185,8 @@ export class MockEsplora {
         .filter(({ tx }) => !this.stale || this.staleTxs.has(tx.txid))
         .map(({ tx }) => tx)
         .filter((tx) => tx.vout.some((o) => o.scriptpubkey_address === address) || tx.vin.some((i) => i.prevout?.scriptpubkey_address === address));
-      const mempool = list.filter((tx) => !tx.status.confirmed).reverse();
+      const mempool = list.filter((tx) => !tx.status.confirmed);
+      if (!this.mempoolOldestFirst) mempool.reverse();
       const confirmed = list.filter((tx) => tx.status.confirmed).sort((a, b) => b.status.block_height - a.status.block_height);
       return { json: [...mempool, ...confirmed].map((tx) => ({ ...tx, status: { ...tx.status } })) };
     }

@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { shortAddress } from '../../address';
 import { explain, t, type ExplainTopic } from '../../i18n/it';
 import { paths } from '../../state/router';
 import { keys, walletTotal } from '../../state/wallet';
@@ -8,6 +9,34 @@ import { CopyButton, Message, RichMessage } from '../common';
 import { Explainable, SectionTitle } from '../explain';
 import { Icon } from '../icons';
 import { QrCode } from '../QrCode';
+import type { WalletKeys } from '../../wallet';
+
+/** Quanti indirizzi di resto già usati mostrare (i più recenti). */
+const CHANGE_SHOWN = 5;
+
+/** Indirizzi di resto: uno nuovo a ogni invio, tutti ricavati dalle stesse 12 parole. */
+function ChangeAddresses({ k }: { k: WalletKeys }): JSX.Element {
+  const used = k.change.length;
+  const shown = [k.nextChange, ...k.change.slice(-CHANGE_SHOWN).reverse()];
+  return (
+    <section class="card" data-testid="keys-change">
+      <SectionTitle topic="changeAddresses">{explain.changeAddresses.title}</SectionTitle>
+      <p class="small">{used === 0 ? t.keys.changeNone : t.keys.changeCount(used)}</p>
+      <ul class="io-list">
+        {shown.map((a) => (
+          <li class="io-item mine" key={a.address}>
+            <span class="addr">
+              <span class="mono">{shortAddress(a.address)}</span>
+              {a === k.nextChange && <span class="tag">{t.keys.changeNext}</span>}
+            </span>
+            <span class="val mono small">{a.path}</span>
+          </li>
+        ))}
+      </ul>
+      {used > CHANGE_SHOWN && <p class="small muted">{t.keys.changeMore(used - CHANGE_SHOWN)}</p>}
+    </section>
+  );
+}
 
 /** Contenuto segreto sfocato finché non si tocca "Mostra". */
 function Secret({ children, testId }: { children: ComponentChildren; testId?: string }): JSX.Element {
@@ -130,6 +159,8 @@ export function Keys(): JSX.Element | null {
         {k.tpub && <KeyField label={`${t.keys.xpub} (tpub)`} topic="xpub" value={k.tpub} />}
         <KeyField label={t.keys.address} topic="address" value={k.address} />
       </section>
+
+      {k.kind === 'mnemonic' && <ChangeAddresses k={k} />}
 
       <RichMessage kind="warning" text={t.home.mainnetWarning} />
       <section class="card">

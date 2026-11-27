@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n/it';
 import { navigate, paths } from '../../state/router';
+import { refresh } from '../../state/sync';
 import { showToast } from '../../state/toasts';
 import { discoverWallets, installWallet, storedWallet } from '../../state/wallet';
 import { parseImport, type ImportError, type StoredWallet } from '../../wallet';
@@ -41,7 +42,10 @@ export function RestoreForm({ onCancel }: { onCancel?: () => void }): JSX.Elemen
     navigate(paths.home, { replace: true });
     if (wallet.kind === 'mnemonic') {
       discoverWallets()
-        .then((count) => count > 1 && showToast(t.wallets.discovered(count), 'success'))
+        .then((count) => {
+          void refresh({ full: true }); // legge subito gli indirizzi di resto ritrovati
+          if (count > 1) showToast(t.wallets.discovered(count), 'success');
+        })
         .catch(() => undefined); // senza rete si ritrovano a mano da "I miei wallet"
     }
   };

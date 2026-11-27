@@ -42,11 +42,19 @@ const dateTimeFormat = new Intl.DateTimeFormat('it-IT', {
   minute: '2-digit',
 });
 
+const shortDateTimeFormat = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 const timeFormat = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
 
 /** Timestamp in secondi (come nei blocchi) → "25 ott 2026, 14:05". */
 export function formatDateTime(unixSeconds: number): string {
   return dateTimeFormat.format(new Date(unixSeconds * 1000));
+}
+
+/** Per le righe dello storico: senza l'anno se è quello in corso ("25 ott, 14:05"). */
+export function formatShortDateTime(unixSeconds: number, nowMs: number = Date.now()): string {
+  const date = new Date(unixSeconds * 1000);
+  return date.getFullYear() === new Date(nowMs).getFullYear() ? shortDateTimeFormat.format(date) : dateTimeFormat.format(date);
 }
 
 export function formatTime(ms: number): string {

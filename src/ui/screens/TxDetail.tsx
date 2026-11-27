@@ -7,7 +7,8 @@ import { formatDateTime, formatSats, groupChars } from '../../format';
 import { confirmationsLabel, confirmationsOf, summarizePending, summarizeTx, type HistoryItem } from '../../history';
 import { t } from '../../i18n/it';
 import { BITCOIN_NETWORK, txExplorerUrl } from '../../networks';
-import type { PendingTx } from '../../pending';
+import { findTx } from '../../chain';
+import type { AddressSet, PendingTx } from '../../pending';
 import { chain, client, keys, networkInfo, pending } from '../../state/wallet';
 import { CopyButton, Message } from '../common';
 import { Explainable, SectionTitle } from '../explain';
@@ -30,7 +31,12 @@ interface TxView {
   hex?: string;
 }
 
-function fromEsplora(tx: EsploraTx, me: string): TxView {
+/** `me` = tutti gli indirizzi del wallet (ricezione e resti). */
+function isMine(me: AddressSet, address: string | undefined): boolean {
+  return address !== undefined && me.has(address);
+}
+
+function fromEsplora(tx: EsploraTx, me: AddressSet): TxView {
   return {
     summary: summarizeTx(tx, me),
     inputs: tx.vin.map((vin) =>
@@ -39,16 +45,16 @@ function fromEsplora(tx: EsploraTx, me: string): TxView {
         : {
             address: vin.prevout?.scriptpubkey_address,
             value: vin.prevout?.value,
-            mine: vin.prevout?.scriptpubkey_address === me,
+            mine: isMine(me, vin.prevout?.scriptpubkey_address),
           },
     ),
-    outputs: tx.vout.map((out) => ({ address: out.scriptpubkey_address, value: out.value, mine: out.scriptpubkey_address === me })),
+    outputs: tx.vout.map((out) => ({ address: out.scriptpubkey_address, value: out.value, mine: isMine(me, out.scriptpubkey_address) })),
     fee: tx.fee,
     vsize: Math.ceil(tx.weight / 4),
   };
 }
 
-function fromPending(p: PendingTx, me: string): TxView {
+function fromPending(p: PendingTx, me: AddressSet): TxView {
   let outputs: IoRow[] = [];
   try {
     const tx = Transaction.fromHex(p.hex);
@@ -59,14 +65,14 @@ function fromPending(p: PendingTx, me: string): TxView {
       } catch {
         address = undefined;
       }
-      return { address, value: Number(out.value), mine: address === me };
+      return { address, value: Number(out.value), mine: isMine(me, address) };
     });
   } catch {
     outputs = [];
   }
   return {
     summary: summarizePending(p, me),
-    inputs: p.spent.map((o) => ({ address: me, value: o.value, mine: true })),
+    inputs: p.spent.map((o) => ({ address: o.address, value: o.value, mine: true })),
     outputs,
     fee: p.fee,
     vsize: p.vsize,
@@ -122,7 +128,7 @@ function RawTx({ txid, knownHex }: { txid: string; knownHex?: string }): JSX.Ele
 
 export function TxDetail({ txid }: { txid: string }): JSX.Element | null {
   const k = keys.value;
-  const known = chain.value.txs?.find((tx) => tx.txid === txid);
+  const known = k ? findTx(chain.value, k.owned, txid) : undefined;
   const local = pending.value.find((p) => p.txid === txid);
   const [fetched, setFetched] = useState<EsploraTx | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error' | 'not-found'>('idle');
@@ -141,7 +147,7 @@ export function TxDetail({ txid }: { txid: string }): JSX.Element | null {
 
   if (!k) return null;
   const source = known ?? fetched;
-  const view = source ? fromEsplora(source, k.address) : local ? fromPending(local, k.address) : null;
+  const view = source ? fromEsplora(source, k.owned) : local ? fromPending(local, k.owned) : null;
 
   if (!view) {
     return (

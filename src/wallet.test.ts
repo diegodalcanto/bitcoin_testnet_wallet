@@ -6,7 +6,11 @@ import {
   ABANDON_ADDRESS,
   ABANDON_ADDRESS_1,
   ABANDON_ADDRESS_2,
+  ABANDON_CHANGE_0,
+  ABANDON_CHANGE_1,
+  ABANDON_CHANGE_2,
   ABANDON_MNEMONIC,
+  ABANDON_W2_CHANGE_0,
   ABANDON_TPRV,
   ABANDON_TPUB,
   ABANDON_VPUB,
@@ -18,12 +22,17 @@ import {
   KEY_ONE_WIF_TESTNET_UNCOMPRESSED,
 } from './test/fixtures';
 import { CONFIG } from './config';
+import { BITCOIN_NETWORK } from './networks';
 import {
   activeIndex,
   canAddWallet,
+  changeAddress,
+  changePath,
+  changeUsed,
   clearStoredWallet,
   completeWord,
   confirmOptions,
+  ECPair,
   generateMnemonic,
   keysFromMnemonic,
   keysFromStored,
@@ -35,6 +44,7 @@ import {
   walletAddress,
   walletCount,
   withActiveWallet,
+  withChangeUsed,
   withNewWallet,
   withWalletCount,
   type RandomInt,
@@ -261,3 +271,64 @@ describe('più wallet dalla stessa frase (wallet gerarchico)', () => {
     expect(loadStoredWallet(memoryStore({ 'tw.wallet': JSON.stringify({ ...base, active: 1.5 }) }))).toBeNull();
   });
 });
+
+describe('indirizzi di resto (uno nuovo a ogni invio)', () => {
+  const base: StoredWallet = { v: 1, kind: 'mnemonic', mnemonic: ABANDON_MNEMONIC, createdAt: 0 };
+
+  it('vettori noti: Wallet 1 usa m/84\'/1\'/0\'/1/k, il Wallet 2 m/84\'/1\'/1\'/1/k', () => {
+    expect(changePath(0, 0)).toBe("m/84'/1'/0'/1/0");
+    expect(changePath(1, 3)).toBe("m/84'/1'/1'/1/3");
+    expect(changeAddress(ABANDON_MNEMONIC, 0, 0)).toBe(ABANDON_CHANGE_0);
+    expect(changeAddress(ABANDON_MNEMONIC, 0, 1)).toBe(ABANDON_CHANGE_1);
+    expect(changeAddress(ABANDON_MNEMONIC, 0, 2)).toBe(ABANDON_CHANGE_2);
+    expect(changeAddress(ABANDON_MNEMONIC, 1, 0)).toBe(ABANDON_W2_CHANGE_0);
+  });
+
+  it('il wallet conosce tutti i suoi indirizzi: ricezione, resti usati e prossimo resto', () => {
+    const keys = keysFromMnemonic(ABANDON_MNEMONIC, 0, 2);
+    expect(keys.address).toBe(ABANDON_ADDRESS); // l'indirizzo per ricevere non cambia mai
+    expect(keys.change.map((c) => [c.address, c.path, c.role, c.index])).toEqual([
+      [ABANDON_CHANGE_0, "m/84'/1'/0'/1/0", 'change', 0],
+      [ABANDON_CHANGE_1, "m/84'/1'/0'/1/1", 'change', 1],
+    ]);
+    expect(keys.nextChange).toMatchObject({ address: ABANDON_CHANGE_2, role: 'change', index: 2 });
+    expect([...keys.owned.keys()]).toEqual([ABANDON_ADDRESS, ABANDON_CHANGE_0, ABANDON_CHANGE_1, ABANDON_CHANGE_2]);
+    expect(keys.owned.get(ABANDON_ADDRESS)).toMatchObject({ role: 'receive', path: "m/84'/1'/0'/0/0" });
+    // la chiave di ogni resto è diversa e corrisponde al suo indirizzo
+    expect(keysFromWif(ECPairWif(keys.owned.get(ABANDON_CHANGE_1)!.privateKey)).address).toBe(ABANDON_CHANGE_1);
+    // il Wallet 2 ha resti suoi
+    expect(keysFromMnemonic(ABANDON_MNEMONIC, 1).nextChange.address).toBe(ABANDON_W2_CHANGE_0);
+  });
+
+  it('una WIF importata ha un solo indirizzo: il resto torna lì', () => {
+    const keys = keysFromWif(KEY_ONE_WIF_TESTNET);
+    expect(keys.change).toEqual([]);
+    expect(keys.nextChange.address).toBe(KEY_ONE_ADDRESS);
+    expect([...keys.owned.keys()]).toEqual([KEY_ONE_ADDRESS]);
+  });
+
+  it('il contatore dei resti è per wallet, cresce soltanto e si salva', () => {
+    expect(changeUsed(base, 0)).toBe(0);
+    const one = withChangeUsed(base, 0, 1);
+    expect(changeUsed(one, 0)).toBe(1);
+    expect(keysFromStored(one).nextChange.address).toBe(ABANDON_CHANGE_1);
+    expect(withChangeUsed(one, 0, 1)).toBe(one); // niente da cambiare
+    expect(withChangeUsed(one, 0, 0)).toBe(one); // non torna mai indietro
+    const two = withChangeUsed(withNewWallet(one)!, 1, 3);
+    expect(two.kind === 'mnemonic' && two.change).toEqual([1, 3]);
+    expect(keysFromStored(two).nextChange.path).toBe("m/84'/1'/1'/1/3");
+    expect(keysFromStored(withActiveWallet(two, 0)).nextChange.address).toBe(ABANDON_CHANGE_1);
+    const kv = memoryStore();
+    saveStoredWallet(kv, two);
+    expect(loadStoredWallet(kv)).toEqual(two);
+    expect(loadStoredWallet(memoryStore({ 'tw.wallet': JSON.stringify({ ...base, change: [1, -2] }) }))).toBeNull();
+    expect(loadStoredWallet(memoryStore({ 'tw.wallet': JSON.stringify({ ...base, change: 'uno' }) }))).toBeNull();
+    const wif: StoredWallet = { v: 1, kind: 'wif', wif: KEY_ONE_WIF_TESTNET, createdAt: 0 };
+    expect(withChangeUsed(wif, 0, 5)).toBe(wif);
+  });
+});
+
+/** WIF di rete test di una chiave privata (per controllare che chiave e indirizzo corrispondano). */
+function ECPairWif(privateKey: Uint8Array): string {
+  return ECPair.fromPrivateKey(privateKey, { network: BITCOIN_NETWORK, compressed: true }).toWIF();
+}

@@ -291,3 +291,19 @@ queste.
   il gap limit); dopo un ripristino l'app ritrova da sola quelli già usati. Ricominciare con 12 parole nuove
   resta possibile, come azione separata con doppia conferma.
 - **Pulsante "Quiz laboratorio bitcoin"** nella Home, che apre <https://quiz.echinus.it/home>.
+- **Resto su indirizzi nuovi dello stesso wallet** (sostituisce "resto allo stesso indirizzo" delle sezioni 4
+  e 5). L'indirizzo per ricevere resta fisso: è quello del QR, quello da registrare nel quiz e quello a cui
+  pagare i premi. A ogni invio il resto va invece a un indirizzo nuovo ricavato dallo stesso seed:
+  `m/84'/1'/0'/1/k` per il Wallet 1 (la catena dei resti standard BIP84), `m/84'/1'/n'/1/k` per il wallet n.
+  Saldo, monete e storico sono la somma di tutti gli indirizzi del wallet; ogni input si firma con la chiave
+  del suo indirizzo. I premi non vanno pagati all'indirizzo da cui è arrivata la puntata (può essere un
+  resto) ma a quello di ricezione registrato. Dopo un ripristino l'app ritrova anche i resti già usati.
+  Per restare nei limiti delle API, a regime si legge solo l'indirizzo di ricezione (una chiamata per
+  aggiornamento); gli indirizzi di resto si leggono dopo un invio, dopo un nuovo blocco, all'apertura
+  dell'app se hanno monete e con "trascina per aggiornare". Una chiave WIF importata ha un solo indirizzo e
+  il resto torna lì.
+- **Storico completo e ordinato.** Lo storico unisce le transazioni di tutti gli indirizzi del wallet ed è
+  ordinato per orario di arrivo: l'API elenca la mempool in un ordine non cronologico, e un invio poteva
+  finire sotto dieci pagamenti ricevuti, fuori dall'elenco della Home. "Mostra tutte" apre l'elenco completo.
+  Toccando una transazione la si apre nel block explorer della rete (mempool.space) in una nuova scheda; il
+  pulsante ⓘ della riga apre il dettaglio nell'app.

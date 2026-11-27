@@ -1,6 +1,6 @@
 import { computed, signal } from '@preact/signals';
+import { ANY_ADDRESS, chainSpent, chainTxs, chainUtxos, parseChainCache, type ChainState } from '../chain';
 import { CONFIG } from '../config';
-import type { EsploraTx, EsploraUtxo } from '../esplora';
 import { EsploraClient } from '../esplora';
 import { buildHistory } from '../history';
 import { getNetworkInfo, type NetworkId } from '../networks';
@@ -8,6 +8,8 @@ import { loadPending, mergeUtxos, savePending, type PendingTx } from '../pending
 import { KEYS, readJson, removeByPrefix, requestPersistentStorage, store, writeJson } from '../storage';
 import {
   activeIndex,
+  changeAddress,
+  changeUsed,
   clearStoredWallet,
   keysFromStored,
   loadStoredWallet,
@@ -15,9 +17,11 @@ import {
   walletAddress,
   walletCount,
   withActiveWallet,
+  withChangeUsed,
   withNewWallet,
   withWalletCount,
   type StoredWallet,
+  type WalletKeys,
 } from '../wallet';
 import { settings, updateSettings } from './settings';
 
@@ -54,31 +58,13 @@ export const client = computed(() => new EsploraClient({ endpoints: endpointsKey
 // Dati letti dalla blockchain (con cache per l'apertura offline)
 // ---------------------------------------------------------------------------
 
-export interface TipInfo {
-  hash: string;
-  height: number;
-  /** Orario del blocco in secondi. */
-  time: number;
-}
-
-export interface ChainState {
-  /** Indirizzo a cui si riferiscono i dati. */
-  address: string | null;
-  utxos: EsploraUtxo[] | null;
-  txs: EsploraTx[] | null;
-  tip: TipInfo | null;
-  /** Ultimo aggiornamento riuscito (ms). */
-  updatedAt: number | null;
-}
-
-const EMPTY_CHAIN: ChainState = { address: null, utxos: null, txs: null, tip: null, updatedAt: null };
+export type { ChainState, TipInfo } from '../chain';
 
 function loadChainCache(scopeKey: string, address: string | null): ChainState {
-  const cached = readJson<ChainState>(store, KEYS.cache(scopeKey));
-  if (!cached || !address || cached.address !== address) return { ...EMPTY_CHAIN, address };
-  return { ...EMPTY_CHAIN, ...cached };
+  return parseChainCache(readJson<unknown>(store, KEYS.cache(scopeKey)), address);
 }
 
+/** Dati letti dall'API per tutti gli indirizzi del wallet in uso (ricezione e resti). */
 export const chain = signal<ChainState>(loadChainCache(scope.value, keys.value?.address ?? null));
 
 export function setChain(next: ChainState): void {
@@ -86,23 +72,40 @@ export function setChain(next: ChainState): void {
   writeJson(store, KEYS.cache(scope.value), next);
 }
 
-export const pending = signal<PendingTx[]>(loadPending(store, scope.value));
+function loadScopePending(): PendingTx[] {
+  const address = keys.value?.address;
+  return address ? loadPending(store, scope.value, address) : [];
+}
+
+export const pending = signal<PendingTx[]>(loadScopePending());
 
 export function setPending(next: PendingTx[]): void {
   pending.value = next;
   savePending(store, scope.value, next);
 }
 
-/** Ultimo saldo noto di un indirizzo sulla rete in uso, dalla cache (null se mai letto). */
+/**
+ * Ultimo saldo noto del wallet con indirizzo di ricezione `address` sulla rete in uso, dalla cache
+ * (tutti i suoi indirizzi; null se mai letto).
+ */
 export function cachedBalance(address: string): number | null {
   const scopeKey = `${networkKey.value}.${address}`;
-  const cached = readJson<ChainState>(store, KEYS.cache(scopeKey));
-  if (!cached?.utxos || cached.address !== address) return null;
-  return mergeUtxos(cached.utxos, loadPending(store, scopeKey)).reduce((sum, u) => sum + u.value, 0);
+  const cached = loadChainCache(scopeKey, address);
+  if (!cached.addresses[address]) return null;
+  const coins = mergeUtxos(chainUtxos(cached, ANY_ADDRESS), loadPending(store, scopeKey, address), chainSpent(cached, ANY_ADDRESS));
+  return coins.reduce((sum, u) => sum + u.value, 0);
 }
 
-/** Monete spendibili: UTXO dell'API + resti locali − monete spese localmente. */
-export const spendable = computed(() => mergeUtxos(chain.value.utxos ?? [], pending.value));
+/** Indirizzi del wallet in uso (ricezione, resti usati, prossimo resto). */
+const owned = computed<ReadonlyMap<string, unknown>>(() => keys.value?.owned ?? new Map());
+
+/** Monete spendibili su tutti gli indirizzi del wallet: UTXO dell'API + resti locali − monete spese localmente. */
+export const spendable = computed(() =>
+  mergeUtxos(chainUtxos(chain.value, owned.value), pending.value, chainSpent(chain.value, owned.value)),
+);
+
+/** Storico dell'API di tutti gli indirizzi del wallet (una transazione può comparire più volte). */
+export const walletTxs = computed(() => chainTxs(chain.value, owned.value));
 
 export const balance = computed(() => {
   let confirmed = 0;
@@ -114,13 +117,13 @@ export const balance = computed(() => {
   return { total: confirmed + unconfirmed, confirmed, unconfirmed, count: spendable.value.length };
 });
 
-export const history = computed(() => {
-  const address = keys.value?.address;
-  return address ? buildHistory(chain.value.txs ?? [], pending.value, address) : [];
-});
+export const history = computed(() => buildHistory(walletTxs.value, pending.value, owned.value, chain.value.seen));
 
-/** true finché non è arrivata nessuna risposta dall'API per questo indirizzo. */
-export const neverLoaded = computed(() => chain.value.utxos === null);
+/** true finché non è arrivata nessuna risposta dall'API per l'indirizzo di ricezione di questo wallet. */
+export const neverLoaded = computed(() => {
+  const address = keys.value?.address;
+  return !address || !chain.value.addresses[address];
+});
 
 // ---------------------------------------------------------------------------
 // Azioni
@@ -142,7 +145,7 @@ function clearAllLocalState(): void {
 
 function reloadChainState(): void {
   chain.value = loadChainCache(scope.value, keys.value?.address ?? null);
-  pending.value = loadPending(store, scope.value);
+  pending.value = loadScopePending();
   resetListeners.forEach((l) => l());
 }
 
@@ -174,6 +177,17 @@ export function selectWallet(index: number): void {
   reloadChainState();
 }
 
+/**
+ * Il wallet `k` ha usato i suoi indirizzi di resto fino a `count` (escluso): il prossimo invio userà
+ * il successivo. Non fa nulla se nel frattempo è cambiato il wallet in uso.
+ */
+export function markChangeUsed(k: WalletKeys, count: number): void {
+  const current = storedWallet.value;
+  if (!current || current.kind !== 'mnemonic' || k.index === null || keys.value?.address !== k.address) return;
+  const next = withChangeUsed(current, k.index, count);
+  if (next !== current) saveWallet(next);
+}
+
 /** Ricava dalla stessa frase il wallet successivo e lo mette in uso. Restituisce il suo indice, o null. */
 export function addWallet(): number | null {
   const current = storedWallet.value;
@@ -186,27 +200,44 @@ export function addWallet(): number | null {
 
 /**
  * Dopo un ripristino da 12 parole: cerca gli altri wallet già usati (indirizzi m/84'/1'/0'/0/1, /2…)
- * finché ne trova DISCOVERY_GAP di fila mai usati. Restituisce quanti wallet risultano in tutto.
+ * e, per ogni wallet, gli indirizzi di resto già usati (dove possono esserci i suoi sats), fermandosi
+ * dopo DISCOVERY_GAP indirizzi di fila mai usati. Restituisce quanti wallet risultano in tutto.
  */
 export async function discoverWallets(): Promise<number> {
   const start = storedWallet.value;
   if (!start || start.kind !== 'mnemonic') return walletTotal.value;
   const api = client.value;
-  let used = walletCount(start);
-  let gap = 0;
-  for (let i = walletCount(start); i < CONFIG.MAX_WALLETS && gap < CONFIG.DISCOVERY_GAP; i++) {
-    const stats = await api.getAddressStats(walletAddress(start.mnemonic, i));
-    if (stats.chain_stats.tx_count + stats.mempool_stats.tx_count > 0) {
-      used = i + 1;
-      gap = 0;
-    } else {
-      gap++;
+  const isUsed = async (address: string) => {
+    const stats = await api.getAddressStats(address);
+    return stats.chain_stats.tx_count + stats.mempool_stats.tx_count > 0;
+  };
+  /** Primo indice dopo l'ultimo usato, a partire da `from`, con al massimo `limit` indici. */
+  const scan = async (from: number, limit: number, addressAt: (i: number) => string) => {
+    let used = from;
+    let gap = 0;
+    for (let i = from; i < limit && gap < CONFIG.DISCOVERY_GAP; i++) {
+      if (await isUsed(addressAt(i))) {
+        used = i + 1;
+        gap = 0;
+      } else {
+        gap++;
+      }
     }
+    return used;
+  };
+
+  const wallets = await scan(walletCount(start), CONFIG.MAX_WALLETS, (i) => walletAddress(start.mnemonic, i));
+  const changes: number[] = [];
+  for (let w = 0; w < wallets; w++) {
+    changes.push(await scan(changeUsed(start, w), Number.MAX_SAFE_INTEGER, (k) => changeAddress(start.mnemonic, w, k)));
   }
+
   const latest = storedWallet.value;
   // Se nel frattempo la frase è cambiata, non si tocca niente.
-  if (latest?.kind === 'mnemonic' && latest.mnemonic === start.mnemonic && used > walletCount(latest)) {
-    saveWallet(withWalletCount(latest, used));
+  if (latest?.kind === 'mnemonic' && latest.mnemonic === start.mnemonic) {
+    let next = wallets > walletCount(latest) ? withWalletCount(latest, wallets) : latest;
+    changes.forEach((count, w) => (next = withChangeUsed(next, w, count)));
+    if (next !== latest) saveWallet(next);
   }
   return walletTotal.value;
 }

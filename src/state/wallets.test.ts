@@ -3,8 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockEsplora } from '../../e2e/mock-esplora.mjs';
 import { checkAddress } from '../address';
 import { store } from '../storage';
-import { ABANDON_ADDRESS, ABANDON_ADDRESS_1, ABANDON_ADDRESS_2, ABANDON_MNEMONIC, KEY_ONE_ADDRESS } from '../test/fixtures';
-import { walletAddress } from '../wallet';
+import {
+  ABANDON_ADDRESS,
+  ABANDON_ADDRESS_1,
+  ABANDON_ADDRESS_2,
+  ABANDON_CHANGE_0,
+  ABANDON_CHANGE_1,
+  ABANDON_MNEMONIC,
+  ABANDON_W2_CHANGE_0,
+  KEY_ONE_ADDRESS,
+} from '../test/fixtures';
+import { changeAddress, walletAddress } from '../wallet';
 import { sendPayment } from './send';
 import { refresh } from './sync';
 import {
@@ -91,9 +100,27 @@ describe('più wallet dalla stessa frase', () => {
     mock.fund(walletAddress(ABANDON_MNEMONIC, 3), 2_000); // il wallet 3 (indice 2) resta mai usato
     await expect(discoverWallets()).resolves.toBe(4);
     expect(walletIndex.value).toBe(0); // resta in uso il primo
-    const probed = mock.requests.filter((r) => /^GET \/address\/[^/]+$/.test(r));
-    expect(probed).toHaveLength(6); // indici 1, 2, 3 e poi 4, 5, 6 mai usati
-    expect(probed[1]).toBe(`GET /address/${ABANDON_ADDRESS_2}`);
+    const probed = mock.requests.filter((r) => /^GET \/address\/[^/]+$/.test(r)).map((r) => r.slice('GET /address/'.length));
+    // indici 1, 2, 3 e poi 4, 5, 6 mai usati; poi i primi 3 resti di ognuno dei 4 wallet, tutti mai usati
+    expect(probed.slice(0, 6)).toEqual([1, 2, 3, 4, 5, 6].map((i) => walletAddress(ABANDON_MNEMONIC, i)));
+    expect(probed[1]).toBe(ABANDON_ADDRESS_2);
+    expect(probed.slice(6)).toEqual([0, 1, 2, 3].flatMap((w) => [0, 1, 2].map((k) => changeAddress(ABANDON_MNEMONIC, w, k))));
+  });
+
+  it('dopo un ripristino ritrova anche gli indirizzi di resto, dove sono i sats', async () => {
+    // Prima del ripristino: due invii dal Wallet 1 (resti /1/0 e /1/1) e uno dal Wallet 2.
+    mock.fund(ABANDON_CHANGE_0, 1_000);
+    mock.fund(ABANDON_CHANGE_1, 40_000);
+    mock.fund(ABANDON_ADDRESS_1, 500);
+    mock.fund(ABANDON_W2_CHANGE_0, 7_000);
+    await expect(discoverWallets()).resolves.toBe(2);
+    expect(storedWallet.value).toMatchObject({ count: 2, change: [2, 1] });
+    expect(keys.value?.nextChange.address).toBe(changeAddress(ABANDON_MNEMONIC, 0, 2));
+    await refresh({ full: true });
+    expect(balance.value.total).toBe(41_000);
+    selectWallet(1);
+    await refresh({ full: true });
+    expect(balance.value.total).toBe(7_500);
   });
 
   it('il cambio rete azzera le transazioni in attesa di tutti i wallet', async () => {
