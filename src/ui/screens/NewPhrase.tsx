@@ -4,21 +4,24 @@ import { formatSats } from '../../format';
 import { t } from '../../i18n/it';
 import { goBack, navigate, paths } from '../../state/router';
 import { showToast } from '../../state/toasts';
-import { balance, installWallet } from '../../state/wallet';
-import { Dialog, Message } from '../common';
+import { balance, installWallet, walletTotal } from '../../state/wallet';
+import { Dialog, Message, RichMessage } from '../common';
 import { Icon } from '../icons';
+import { Rich } from '../text';
 import { CreateWallet } from './CreateWallet';
 
 type Phase = 'intro' | 'confirm' | 'create';
 
 /**
- * Nuovo wallet con doppia conferma (pulsante + "Sei proprio sicuro?"), poi subito le 12 parole nuove.
- * Il wallet attuale viene sostituito solo alla fine: con "Indietro" non si perde niente.
+ * Ricominciare da zero con 12 parole nuove (doppia conferma: pulsante + "Sei proprio sicuro?").
+ * Per un altro indirizzo basta "I miei wallet"; questo cancella la frase e tutti i suoi wallet,
+ * ma solo alla fine: con "Indietro" non si perde niente.
  */
-export function NewWallet(): JSX.Element {
+export function NewPhrase(): JSX.Element {
   const [phase, setPhase] = useState<Phase>('intro');
   useEffect(() => window.scrollTo(0, 0), [phase === 'create']);
   const remaining = balance.value.total;
+  const others = walletTotal.value - 1;
 
   if (phase === 'create') {
     return (
@@ -27,7 +30,7 @@ export function NewWallet(): JSX.Element {
         onCreated={(wallet) => {
           navigate(paths.home, { replace: true });
           installWallet(wallet);
-          showToast(t.newWallet.done, 'success');
+          showToast(t.newPhrase.done, 'success');
         }}
       />
     );
@@ -35,36 +38,47 @@ export function NewWallet(): JSX.Element {
 
   return (
     <div class="stack" style={{ gap: '16px' }}>
-      <h1 class="page-title">{t.newWallet.title}</h1>
+      <h1 class="page-title">{t.newPhrase.title}</h1>
+      <RichMessage kind="info" text={t.newPhrase.wantAnother} />
+      <a class="btn btn-primary btn-block" href={paths.wallets}>
+        <Icon name="wallet" />
+        {t.wallets.title}
+      </a>
       <Message kind="error" icon="alert">
-        {t.newWallet.text}
+        <Rich text={t.newPhrase.text} />
         {remaining > 0 && (
           <>
             <br />
-            <strong data-testid="new-wallet-balance">{t.newWallet.balanceWarning(formatSats(remaining))}</strong>
+            <strong data-testid="new-phrase-balance">{t.newPhrase.balanceWarning(formatSats(remaining))}</strong>
+          </>
+        )}
+        {others > 0 && (
+          <>
+            <br />
+            <strong>{t.newPhrase.otherWallets(others)}</strong>
           </>
         )}
       </Message>
-      <p class="small muted">{t.newWallet.saveFirst}</p>
+      <p class="small muted">{t.newPhrase.saveFirst}</p>
       <button type="button" class="btn btn-outline btn-block" onClick={() => navigate(paths.keys)}>
         <Icon name="key" />
         {t.settings.keys}
       </button>
       <button type="button" class="btn btn-danger btn-lg btn-block" onClick={() => setPhase('confirm')}>
-        {t.newWallet.button}
+        {t.newPhrase.button}
       </button>
       <button type="button" class="btn btn-ghost" onClick={() => goBack(paths.settings)}>
         {t.common.cancel}
       </button>
       {phase === 'confirm' && (
         <Dialog
-          title={t.newWallet.confirmTitle}
-          confirmLabel={t.newWallet.confirmButton}
+          title={t.newPhrase.confirmTitle}
+          confirmLabel={t.newPhrase.confirmButton}
           danger
           onCancel={() => setPhase('intro')}
           onConfirm={() => setPhase('create')}
         >
-          <p>{t.newWallet.confirmText}</p>
+          <p>{t.newPhrase.confirmText}</p>
         </Dialog>
       )}
     </div>

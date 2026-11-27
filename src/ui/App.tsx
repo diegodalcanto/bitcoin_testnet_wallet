@@ -15,7 +15,7 @@ import { Home } from './screens/Home';
 import { Info } from './screens/Info';
 import { Keys } from './screens/Keys';
 import { Learn } from './screens/Learn';
-import { NewWallet } from './screens/NewWallet';
+import { NewPhrase } from './screens/NewPhrase';
 import { Onboarding } from './screens/Onboarding';
 import { LockScreen, PinSetupScreen } from './screens/Pin';
 import { Receive } from './screens/Receive';
@@ -23,6 +23,7 @@ import { RestoreScreen } from './screens/Restore';
 import { Send } from './screens/Send';
 import { Settings } from './screens/Settings';
 import { TxDetail } from './screens/TxDetail';
+import { Wallets } from './screens/Wallets';
 
 const TABS: { name: Route['name']; label: string; icon: IconName; href: string }[] = [
   { name: 'home', label: t.nav.wallet, icon: 'wallet', href: paths.home },
@@ -116,8 +117,10 @@ function Screen({ r }: { r: Route }): JSX.Element {
       return <Info />;
     case 'restore':
       return <RestoreScreen />;
-    case 'new-wallet':
-      return <NewWallet />;
+    case 'wallets':
+      return <Wallets />;
+    case 'new-phrase':
+      return <NewPhrase />;
     case 'pin':
       return <PinSetupScreen remove={r.remove} />;
   }

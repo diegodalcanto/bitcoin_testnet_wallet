@@ -4,7 +4,7 @@ import { paymentUri } from '../../address';
 import { formatSats, groupChars } from '../../format';
 import { explain, t } from '../../i18n/it';
 import { lastIncoming } from '../../state/sync';
-import { keys } from '../../state/wallet';
+import { keys, walletIndex, walletTotal } from '../../state/wallet';
 import { CopyButton, Message } from '../common';
 import { Explainable, InlineExplain } from '../explain';
 import { Icon } from '../icons';
@@ -36,7 +36,10 @@ export function Receive(): JSX.Element | null {
         </InlineExplain>
       </div>
       <section class="card">
-        <Explainable topic="address" label={t.receive.addressLabel}>
+        <Explainable
+          topic="address"
+          label={walletTotal.value > 1 ? t.receive.addressLabelOf(t.wallets.name(walletIndex.value + 1)) : t.receive.addressLabel}
+        >
           <p class="address-text" data-testid="receive-address" style={{ marginTop: '8px' }}>
             {groupChars(k.address)}
           </p>

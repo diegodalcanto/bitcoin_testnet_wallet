@@ -35,6 +35,7 @@ const PATHS = {
   dots: 'M12 5.5v.5M12 12v.5M12 18.5v.5',
   download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
   oneWay: 'M12 4v14M6 12l6 6 6-6',
+  quiz: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.6-2.8 4.1M12 17.6v.4',
 } as const;
 
 export type IconName = keyof typeof PATHS;

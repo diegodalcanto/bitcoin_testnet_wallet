@@ -12,7 +12,8 @@ export type Route =
   | { name: 'settings' }
   | { name: 'info' }
   | { name: 'restore' }
-  | { name: 'new-wallet' }
+  | { name: 'wallets' }
+  | { name: 'new-phrase' }
   | { name: 'pin'; remove: boolean };
 
 export function parseRoute(hash: string): Route {
@@ -36,8 +37,10 @@ export function parseRoute(hash: string): Route {
       return { name: 'info' };
     case 'ripristina':
       return { name: 'restore' };
-    case 'nuovo-wallet':
-      return { name: 'new-wallet' };
+    case 'wallet':
+      return { name: 'wallets' };
+    case 'nuove-parole':
+      return { name: 'new-phrase' };
     case 'pin':
       return { name: 'pin', remove: path[1] === 'rimuovi' };
     default:
@@ -56,7 +59,8 @@ export const paths = {
   settings: '#/impostazioni',
   info: '#/info',
   restore: '#/ripristina',
-  newWallet: '#/nuovo-wallet',
+  wallets: '#/wallet',
+  newPhrase: '#/nuove-parole',
   pin: '#/pin',
   pinRemove: '#/pin/rimuovi',
 } as const;
