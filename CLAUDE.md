@@ -20,9 +20,10 @@ I ragazzi la installano dal link, ricevono sats di test e li "puntano" sulle ris
    + output locali verso il proprio indirizzo − outpoint spesi localmente; voci locali eliminate quando
    l'API le riflette o dopo 30 minuti; stato separato per rete. Logica pura in `src/pending.ts`.
 4. **Transazioni** (`src/tx.ts`): input = tutti gli UTXO spendibili (consolidamento), output =
-   destinatario + resto allo stesso indirizzo; resto sotto la soglia dust (294 sat) → in fee; "Tutto" =
-   un solo output; fee = `max(fastestFee, 2)` sat/vB; `nSequence = 0xffffffff`, niente RBF; firma PSBT
-   con `witnessUtxo`.
+   destinatario + resto a un **indirizzo di resto nuovo** dello stesso wallet (`keys.nextChange`; per una
+   WIF importata lo stesso indirizzo); resto sotto la soglia dust (294 sat) → in fee; "Tutto" = un solo
+   output; fee = `max(fastestFee, 2)` sat/vB; `nSequence = 0xffffffff`, niente RBF; firma PSBT con
+   `witnessUtxo`, ogni input con la chiave del suo indirizzo.
 5. **Testi in un solo posto.** Tutte le stringhe dell'interfaccia e le spiegazioni didattiche stanno in
    `src/i18n/it.ts` (italiano, linguaggio adatto alle superiori, niente gergo nei messaggi d'errore).
    Non scrivere testi per l'utente dentro i componenti.
@@ -38,9 +39,13 @@ I ragazzi la installano dal link, ricevono sats di test e li "puntano" sulle ris
 10. Su iOS il wallet si crea **solo nell'app installata** (Safari e app sulla Home hanno memorie
     separate).
 11. **Più wallet dallo stesso seed** (richiesta successiva alla spec, vedi `docs/SPEC.md` §9): il wallet n
-    usa l'indirizzo `m/84'/1'/0'/0/n` (stesso account, quindi stessa tpub/vpub); ognuno ha un solo
-    indirizzo riusato, saldo e stato locale suoi. Massimo `CONFIG.MAX_WALLETS` (20, entro il gap limit).
-    "Crea un nuovo wallet" non genera parole nuove: per quello c'è "Ricomincia con 12 parole nuove".
+    riceve sempre su `m/84'/1'/0'/0/n` (stesso account, quindi stessa tpub/vpub): è l'indirizzo del QR e
+    quello registrato nel quiz. Massimo `CONFIG.MAX_WALLETS` (20, entro il gap limit). "Crea un nuovo
+    wallet" non genera parole nuove: per quello c'è "Ricomincia con 12 parole nuove".
+12. **Resti su indirizzi nuovi** (`docs/SPEC.md` §9): il resto del wallet n va a `m/84'/1'/n'/1/k`, un
+    indirizzo nuovo a ogni invio (Wallet 1 = catena dei resti standard `m/84'/1'/0'/1/k`). Saldo, monete e
+    storico sono la somma di tutti gli indirizzi del wallet (`keys.owned`). `StoredWallet.change[n]` conta i
+    resti usati: avanza dopo un invio riuscito o dall'esito incerto, mai indietro.
 
 ## Comandi
 
@@ -64,10 +69,11 @@ al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 | `src/config.ts` | Parametri (fee, dust, polling, timeout, scadenza delle voci locali…) |
 | `src/networks.ts` | Reti, endpoint con riserva, colori del badge, riconoscimento della catena dal blocco genesi |
 | `src/address.ts` | Validazione indirizzi (rifiuto mainnet/regtest/Lightning) e URI BIP21 |
-| `src/wallet.ts` | Frase BIP39, derivazione BIP84, WIF, `tpub`/`vpub`, ripristino, persistenza |
+| `src/wallet.ts` | Frase BIP39, derivazione BIP84 (ricezione e resti, `keys.owned`), WIF, `tpub`/`vpub`, ripristino, persistenza |
 | `src/esplora.ts` | Client Esplora: riserva su rete/timeout/429/5xx, errori 4xx definitivi |
 | `src/tx.ts` | Stima vsize/fee, dust, consolidamento, firma PSBT, classificazione errori di broadcast |
 | `src/pending.ts` | Stato locale delle transazioni appena inviate e unione con gli UTXO dell'API |
+| `src/chain.ts` | Dati della blockchain per indirizzo (cache e migrazione), quali indirizzi leggere a ogni aggiornamento, orari di arrivo delle transazioni |
 | `src/history.ts`, `src/format.ts` | Storico visto dal proprio indirizzo, formattazione it-IT |
 | `src/probe.ts` | Prova di un server Esplora personalizzato (rifiuta mainnet) |
 | `src/storage.ts`, `src/ecc.ts`, `src/brand.ts` | localStorage sicuro, init secp256k1, elenco loghi |
@@ -80,18 +86,33 @@ al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 
 ## Note di implementazione
 
-- Polling: una chiamata `/address/:a/utxo` per aggiornamento; `/address/:a/txs` solo se le monete cambiano,
-  ultimo blocco ogni 4 aggiornamenti o quando una moneta riceve la prima conferma (`src/state/sync.ts`).
+- Polling: una chiamata `/address/:a/utxo` (indirizzo di ricezione) per aggiornamento; `/address/:a/txs` solo
+  se le monete di quell'indirizzo cambiano, ultimo blocco ogni 4 aggiornamenti o quando una moneta riceve la
+  prima conferma (`src/state/sync.ts`). Gli indirizzi di resto si leggono solo quando possono essere cambiati
+  (`src/chain.ts`): finché una transazione locale li tocca, dopo un nuovo blocco (quelli con monete o
+  transazioni non confermate), all'apertura (quelli con monete), se lo storico di un altro indirizzo mostra una
+  transazione che non conoscono (`staleTargets`), uno a turno ogni `COLD_CHECK_EVERY` aggiornamenti, tutti con
+  "trascina per aggiornare" (`refresh({ sweep: true })`). Quindi la conferma di un resto si vede al controllo
+  del blocco successivo (al massimo 4 aggiornamenti dopo).
 - Invio (`src/state/send.ts`): fee troppo bassa → una volta con fee doppia; input spesi → ritrasmette le
   transazioni locali, scarta quelle in conflitto, ricarica e riprova una volta; errore di rete → controlla
   `/tx/:txid` prima di dire che è fallito (per non pagare due volte).
-- Una voce locale è "riflessa" dall'API solo se l'API la conosce **e** nella stessa vista nessuna delle sue
-  monete risulta ancora non spesa (protegge da server di riserva in ritardo).
+- Una voce locale è "riflessa" dall'API solo se l'API la conosce, nella stessa vista nessuna delle sue
+  monete risulta ancora non spesa **e** i suoi output verso il wallet (il resto, su un altro indirizzo)
+  compaiono tra gli UTXO o risultano spesi da una transazione nota (protegge da server di riserva in ritardo
+  e da indirizzi di resto non ancora letti). Le voci salvate prima dei resti nuovi (senza indirizzi)
+  riguardano l'indirizzo di ricezione.
 - Su iOS non installata si mostra la guida all'installazione prima di creare il wallet.
 - Più wallet: `screens/Wallets.tsx` ("I miei wallet", aperto dall'indicatore sopra il saldo o dalle
   Impostazioni) crea e sceglie i wallet. Stato locale e cache stanno in `tw.pending.<rete>.<indirizzo>` e
-  `tw.cache.<rete>.<indirizzo>`, così un wallet non vede mai i resti di un altro. Dopo un ripristino da 12
-  parole `discoverWallets()` ritrova gli indirizzi già usati (si ferma dopo `DISCOVERY_GAP` mai usati).
+  `tw.cache.<rete>.<indirizzo>` (indirizzo di ricezione; la cache tiene i dati di tutti gli indirizzi del
+  wallet), così un wallet non vede mai i resti di un altro. Dopo un ripristino da 12 parole
+  `discoverWallets()` ritrova i wallet e, per ognuno, i resti già usati (si ferma dopo `DISCOVERY_GAP` mai
+  usati). Se il prossimo resto risulta già usato, la sincronizzazione avanza da sola.
+- Storico (`src/history.ts`): unione degli storici di tutti gli indirizzi, una riga per transazione, ordinato
+  per arrivo (`chain.seen`, orario d'invio per quelle partite da qui): l'API elenca la mempool in un ordine
+  non cronologico. Una figlia viene sempre prima della madre. La riga apre la transazione nel block explorer
+  (nuova scheda), il pulsante ⓘ il dettaglio nell'app; "Mostra tutte" oltre `HOME_TX_COUNT`.
 - Ricominciare da zero (`screens/NewPhrase.tsx`): doppia conferma, poi `screens/CreateWallet.tsx` (lo
   stesso componente dell'onboarding) mostra le parole nuove; la frase attuale viene sostituita da
   `installWallet` solo alla fine, quindi "Indietro" non perde nulla.

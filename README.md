@@ -30,6 +30,9 @@ Specifica completa: [`docs/SPEC.md`](docs/SPEC.md). Contenuti della lezione: [`d
    **Incolla** l'indirizzo) → scegli quanto puntare (**25%**, **50%**, **Tutto** o un importo) → **scorri per
    inviare**.
 5. Puoi puntare subito anche i sats "in attesa di conferma": non serve aspettare il blocco.
+6. Tocca una transazione nello storico per vederla nel **block explorer** (mempool.space).
+   Il resto dei tuoi invii va ogni volta a un indirizzo nuovo del tuo wallet: per ricevere usi sempre lo
+   stesso, quello del QR.
 
 Tocca le icone **i** per le spiegazioni e apri **Impara** per la guida a schede.
 
@@ -63,8 +66,10 @@ Con queste regole ogni ragazzo resta in un cluster suo, di poche transazioni.
 
 ### Durante il laboratorio
 
-- Il wallet spende sempre **tutte** le monete insieme e rimanda il resto allo stesso indirizzo: ogni ragazzo
-  ha una catena lineare e i premi si pagano all'indirizzo da cui è arrivata la puntata.
+- Il wallet spende sempre **tutte** le monete insieme e manda il resto a un **indirizzo nuovo** dello stesso
+  wallet (`m/84'/1'/0'/1/0`, `/1/1`…), come i wallet veri: ogni ragazzo ha una catena lineare. Per ricevere usa
+  invece sempre lo stesso indirizzo (`m/84'/1'/0'/0/0`): è quello da registrare nel quiz ed è **lì che vanno
+  pagati i premi**, non all'indirizzo da cui è arrivata la puntata (che è un resto).
 - Se un ragazzo vede **"Troppe transazioni in attesa"**, deve aspettare il prossimo blocco (l'app mostra da
   quanti minuti è arrivato l'ultimo).
 - **Impostazioni → Mostra spiegazioni**: se attivo i box "i" sono già aperti; durante il gioco si può spegnere
@@ -94,6 +99,8 @@ transazioni in attesa.
 | Serve un altro wallet (un altro indirizzo) | Toccare **Wallet 1** sopra il saldo (o Impostazioni → *I miei wallet*) → **Crea un nuovo wallet**: nuovo indirizzo ricavato dalle **stesse 12 parole** (wallet gerarchico, `m/84'/1'/0'/0/n`), niente da riscrivere. Dallo stesso elenco si passa da un wallet all'altro; ognuno ha il suo saldo |
 | Un ragazzo vuole ricominciare da zero | Impostazioni → **Ricomincia con 12 parole nuove**: doppia conferma, poi le parole nuove. Cancella la frase attuale e tutti i suoi wallet, ma solo alla fine |
 | PIN dimenticato | "Ho dimenticato il PIN" cancella il wallet: si ripristina con le 12 parole |
+| Sats mandati a un vecchio indirizzo di resto non compaiono | Trascinare la Home verso il basso: rilegge tutti gli indirizzi del wallet (altrimenti l'app li ricontrolla da sola, uno ogni due minuti circa) |
+| Un resto resta "in attesa di conferma" dopo il blocco | Normale per qualche decina di secondi: l'app controlla l'ultimo blocco ogni minuto circa |
 | Dati del browser cancellati / app disinstallata | Il wallet si recupera solo con le 12 parole (Impostazioni → Ripristina wallet) |
 | Su iPhone il wallet "è sparito" dopo l'installazione | Era stato creato in Safari: l'app installata ha una memoria separata |
 | "Server non raggiungibile" o "Troppe richieste" | Tutta la classe esce dallo stesso IP: l'app rallenta da sola e usa il server di riserva; in caso estremo usare una rete personalizzata con un server vostro |
@@ -117,7 +124,8 @@ npm run test:e2e    # build + smoke test in Chromium con API Esplora simulate (s
 | --- | --- |
 | `src/config.ts` | Parametri: fee minima, soglia dust, polling, timeout, scadenze |
 | `src/networks.ts`, `src/address.ts` | Reti, endpoint, validazione indirizzi (rifiuto mainnet), BIP21 |
-| `src/wallet.ts` | Frase BIP39, derivazione BIP84 `m/84'/1'/0'/0/0`, WIF, tpub/vpub |
+| `src/wallet.ts` | Frase BIP39, derivazione BIP84 (ricezione `m/84'/1'/0'/0/n`, resti `m/84'/1'/n'/1/k`), WIF, tpub/vpub |
+| `src/chain.ts` | Dati della blockchain per indirizzo e scelta degli indirizzi da leggere (limiti delle API) |
 | `src/esplora.ts` | Client Esplora con endpoint di riserva |
 | `src/tx.ts`, `src/pending.ts` | Costruzione e firma delle transazioni, stato locale delle transazioni non confermate |
 | `src/state/`, `src/ui/` | Stato dell'app e interfaccia (Preact) |

@@ -31,6 +31,14 @@ function deriveAddress(mnemonic, index) {
   return payments.p2wpkh({ pubkey: node.publicKey, network: networks.testnet }).address;
 }
 
+/** Indirizzo di resto atteso `k` del Wallet 1 (m/84'/1'/0'/1/k). */
+function deriveChange(mnemonic, k) {
+  const node = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic)).derive(`m/84'/1'/0'/1/${k}`);
+  return payments.p2wpkh({ pubkey: node.publicKey, network: networks.testnet }).address;
+}
+
+const addressOfOutput = (out) => payments.p2wpkh({ output: out.script, network: networks.testnet }).address;
+
 let failures = 0;
 /** Pagina in uso: in caso di errore se ne salva uno screenshot. */
 let currentPage = null;
@@ -205,6 +213,12 @@ async function main() {
     }
     check(chained, 'ogni invio spende il resto del precedente (catena lineare)');
     check(decoded.every((tx) => tx.ins.every((input) => input.sequence === 0xffffffff)), 'nSequence 0xffffffff (niente RBF)');
+    const changeOuts = decoded.map((tx) => addressOfOutput(tx.outs[1]));
+    check(
+      changeOuts.every((a, i) => a === deriveChange(words.join(' '), i)),
+      "ogni resto va a un indirizzo nuovo dello stesso wallet (m/84'/1'/0'/1/0 … /1/4)",
+    );
+    check(!changeOuts.includes(address), 'nessun resto torna all’indirizzo per ricevere');
     check(txids.every((id, i) => id === decoded[i].getId()), 'txid mostrati = txid trasmessi');
 
     // Riepilogo e "Cosa succede" prima dell'invio
@@ -213,7 +227,7 @@ async function main() {
     await shot(page, '08-send-summary');
     await page.locator('summary', { hasText: 'Cosa succede' }).click();
     await shot(page, '09-send-details');
-    check(await page.getByText('resto, torna a te').isVisible(), '"Cosa succede" mostra il resto');
+    check(await page.getByText('resto, a un tuo indirizzo nuovo').isVisible(), '"Cosa succede" mostra il resto, su un indirizzo nuovo');
 
     mock.unfreeze();
     await page.goto(BASE);
@@ -221,13 +235,44 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="tx-row"]').length >= 6, null, { timeout: 20_000 });
     const balanceText = await page.getByTestId('balance').textContent();
     check(balanceText.includes(String(Number(decoded.at(-1).outs[1].value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')), `saldo = ultimo resto (${balanceText.trim()})`);
+    const titles = await page.locator('[data-testid="tx-row"] .tx-title').allTextContents();
+    check(titles.slice(0, 5).every((t) => t.startsWith('Inviati')) && titles[5].startsWith('Ricevuti'), 'storico: i 5 invii in cima, poi il pagamento ricevuto');
+    const firstRow = page.locator('[data-testid="tx-row"]').first();
+    check(
+      (await firstRow.getAttribute('href')) === `https://mempool.space/signet/tx/${decoded.at(-1).getId()}` && (await firstRow.getAttribute('target')) === '_blank',
+      'ogni riga dello storico porta alla transazione nel block explorer, in una nuova scheda',
+    );
     await shot(page, '11-home-history');
 
     // Nuovo blocco: tutto confermato
+    // Nuovo blocco. Il resto sta su un indirizzo di resto: la conferma si vede al controllo dell'ultimo
+    // blocco (ogni 4 aggiornamenti) o, come qui, riaprendo l'app.
     mock.mine();
-    await poke(page);
+    await page.reload();
     await page.getByText('tutto confermato').waitFor({ timeout: 20_000 });
     check(true, 'dopo un blocco il saldo risulta confermato');
+
+    // Il caso visto in aula: tanti pagamenti in mempool e l'API che li elenca prima dell'invio più recente.
+    console.log('Storico con tanti pagamenti in attesa (ordine della mempool non cronologico)');
+    mock.mempoolOldestFirst = true;
+    for (let i = 0; i < 11; i++) mock.fund(address, 1_000_000, { confirmed: false });
+    await poke(page);
+    await page.getByTestId('pending-line').getByText(/11\.000\.000 sats in attesa/).waitFor({ timeout: 20_000 });
+    await send(page, RECIPIENT, 300_000);
+    await page.getByRole('heading', { name: 'Inviato!' }).waitFor({ timeout: 15_000 });
+    const bigSend = decode(mock.broadcasts.at(-1));
+    check(bigSend.ins.length === 12 && addressOfOutput(bigSend.outs[1]) === deriveChange(words.join(' '), 5), 'spende tutte le 12 monete, resto al sesto indirizzo di resto');
+    await page.goto(BASE);
+    await poke(page);
+    await page.waitForFunction(() => !Object.keys(localStorage).some((k) => k.startsWith('tw.pending.')), null, { timeout: 20_000 });
+    const mixed = await page.locator('[data-testid="tx-row"] .tx-title').allTextContents();
+    check(mixed.length === 10 && mixed[0].startsWith('Inviati'), 'l’invio più recente è in cima, anche se l’API lo elenca dopo 11 pagamenti in mempool');
+    await shot(page, '11b-home-history-mempool');
+    await page.getByTestId('history-toggle').click();
+    const all = await page.locator('[data-testid="tx-row"]').count();
+    check(all === 18, `"Mostra tutte" mostra tutto lo storico (${all} transazioni)`);
+    await shot(page, '11c-home-history-all');
+    await page.getByTestId('history-toggle').click();
 
     // ------------------------------------------------------------------ errori
     console.log('Errori e ritentativi');
@@ -250,14 +295,17 @@ async function main() {
     check(true, 'indirizzo mainnet rifiutato prima di firmare');
     await shot(page, '13-send-mainnet');
 
-    await fillSend(page, RECIPIENT, 10_000_000);
+    await fillSend(page, RECIPIENT, 100_000_000);
     await page.getByText(/Saldo insufficiente/).waitFor();
     check(true, 'saldo insufficiente segnalato prima di firmare');
 
     // ------------------------------------------------------------------ altre schermate
     console.log('Dettaglio, chiavi, monete, impara, impostazioni');
     await page.goto(BASE);
-    await page.locator('[data-testid="tx-row"]').first().click();
+    const [explorer] = await Promise.all([page.waitForEvent('popup'), page.locator('[data-testid="tx-row"]').first().click()]);
+    check(/^https:\/\/mempool\.space\/signet\/tx\/[0-9a-f]{64}$/.test(explorer.url()), `toccando la riga si apre il block explorer (${explorer.url()})`);
+    await explorer.close();
+    await page.locator('[data-testid="tx-details"]').first().click();
     await page.getByTestId('tx-detail-txid').waitFor();
     await page.getByText('Transazione grezza').first().click();
     await page.locator('.raw-hex').waitFor();
@@ -270,11 +318,14 @@ async function main() {
     check(shownWords.join(' ') === words.join(' '), 'Le mie chiavi mostra la stessa frase');
     check(await page.locator('p.mono', { hasText: "m/84'/1'/0'/0/0" }).isVisible(), 'percorso di derivazione');
     check((await page.getByText(/^vpub/).count()) > 0 && (await page.getByText(/^tpub/).count()) > 0, 'vpub e tpub');
+    const changeList = await page.getByTestId('keys-change').textContent();
+    check(/7 indirizzi di resto già usati/.test(changeList) && changeList.includes("m/84'/1'/0'/1/7") && changeList.includes('prossimo'), 'Le mie chiavi: indirizzi di resto usati e il prossimo');
     await shot(page, '15-keys');
 
     await page.goto(`${BASE}#/monete`);
     await page.getByTestId('coins-summary').waitFor();
     check(/1 moneta/.test(await page.getByTestId('coins-summary').textContent()), 'dopo il consolidamento resta una sola moneta');
+    check(/indirizzo di resto n\. 7/.test(await page.getByTestId('coin-address').first().textContent()), 'la moneta sta sull’ultimo indirizzo di resto');
     await shot(page, '16-coins');
 
     await page.goto(`${BASE}#/impara`);
@@ -316,16 +367,19 @@ async function main() {
     await p2.getByText(/chiave di Bitcoin vero \(mainnet\)/).waitFor();
     check(true, 'WIF mainnet rifiutata');
     mock2.fund(deriveAddress(ABANDON, 1), 7_000); // Wallet 2 era già stato usato su un altro telefono
+    mock2.fund(deriveChange(ABANDON, 0), 3_000); // e il Wallet 1 aveva un resto
     await p2.getByRole('textbox').fill(ABANDON);
     await p2.getByRole('button', { name: 'Ripristina' }).click();
     await p2.getByTestId('balance').waitFor();
     await p2.getByText('Ritrovati 2 wallet', { exact: false }).waitFor({ timeout: 15_000 });
     check(true, 'il ripristino ritrova da solo gli altri wallet già usati');
+    await p2.getByTestId('balance').getByText('3.000').waitFor({ timeout: 20_000 });
+    check(true, 'il ripristino ritrova i sats sugli indirizzi di resto');
     const restored = await receiveAddress(p2);
     check(restored === 'tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl', 'dalla frase nota si ottiene l’indirizzo atteso');
     mock2.fund(restored, 42_000);
     await p2.goto(BASE);
-    await p2.getByTestId('balance').getByText('42.000').waitFor({ timeout: 20_000 });
+    await p2.getByTestId('balance').getByText('45.000').waitFor({ timeout: 20_000 });
     await shot(p2, '21-home-restored-dark');
 
     await p2.goto(`${BASE}#/pin`);
@@ -354,7 +408,7 @@ async function main() {
     await second.context.setOffline(true);
     await p2.reload();
     await typePin('1234');
-    await p2.getByTestId('balance').getByText('42.000').waitFor();
+    await p2.getByTestId('balance').getByText('45.000').waitFor();
     await p2.getByText(/Offline – ultimo saldo noto|Server non raggiungibile/).waitFor({ timeout: 10_000 });
     await shot(p2, '23-offline');
     check(true, 'offline: si apre e mostra l’ultimo saldo noto');
