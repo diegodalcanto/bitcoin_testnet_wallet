@@ -10,6 +10,9 @@ export const ABANDON_TPUB =
   'tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M';
 export const ABANDON_VPUB =
   'vpub5Y6cjg78GGuNLsaPhmYsiw4gYX3HoQiRBiSwDaBXKUafCt9bNwWQiitDk5VZ5BVxYnQdwoTyXSs2JHRPAgjAvtbBrf8ZhDYe2jWAqvZVnsc';
+/** Wallet successivi ricavati dalla stessa frase: m/84'/1'/0'/0/1 e /0/2. */
+export const ABANDON_ADDRESS_1 = 'tb1qd7spv5q28348xl4myc8zmh983w5jx32cjhkn97';
+export const ABANDON_ADDRESS_2 = 'tb1qxdyjf6h5d6qxap4n2dap97q4j5ps6ua8sll0ct';
 export const ABANDON_TPRV =
   'tprv8fSjiqEQ8YG7Ro7gw2ScwcvweYuuWi1ZzGUtrPz918HvDtBzL5s2voFTrN4y3yUwj5cYD54pLhxk6NKCzHUjcka3zbKjbTEcsuAnkzbjhkL';
 export const ABANDON_XPRV =

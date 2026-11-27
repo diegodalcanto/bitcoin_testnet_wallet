@@ -36,9 +36,16 @@ export const CONFIG = {
   /** Oltre questo numero di conferme si mostra "6+". */
   MAX_CONFIRMATIONS_SHOWN: 6,
 
-  /** Derivazione BIP84 per reti di test (coin type 1). */
+  /** Derivazione BIP84 per reti di test (coin type 1): il wallet n (da 0) usa l'indirizzo RECEIVE_PATH/n. */
   ACCOUNT_PATH: "m/84'/1'/0'",
-  DERIVATION_PATH: "m/84'/1'/0'/0/0",
+  RECEIVE_PATH: "m/84'/1'/0'/0",
+  /**
+   * Quanti wallet si possono ricavare dallo stesso seed. Restando entro il "gap limit" di 20 indirizzi,
+   * qualsiasi wallet BIP84 li ritrova tutti dalle 12 parole.
+   */
+  MAX_WALLETS: 20,
+  /** Ripristino: si cercano altri wallet usati finché se ne trovano tanti di fila mai usati. */
+  DISCOVERY_GAP: 3,
 
   /** Onboarding: quante parole far confermare. */
   WORDS_TO_CONFIRM: 2,
@@ -50,4 +57,6 @@ export const CONFIG = {
 
   /** Codice sorgente. */
   REPO_URL: 'https://github.com/diegodalcanto/bitcoin_testnet_wallet',
+  /** Sito del quiz del laboratorio (pulsante nella Home). */
+  QUIZ_URL: 'https://quiz.echinus.it/home',
 } as const;

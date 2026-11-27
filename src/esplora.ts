@@ -45,6 +45,11 @@ export interface EsploraTx {
   status: EsploraStatus;
 }
 
+export interface EsploraAddressStats {
+  chain_stats: { tx_count: number };
+  mempool_stats: { tx_count: number };
+}
+
 export interface EsploraBlock {
   id: string;
   height: number;
@@ -184,6 +189,11 @@ export class EsploraClient {
       }
     }
     throw lastError ?? new EsploraError('network', 'Nessun server raggiungibile');
+  }
+
+  /** Riepilogo di un indirizzo: serve a capire se è mai stato usato. */
+  getAddressStats(address: string): Promise<EsploraAddressStats> {
+    return this.request<EsploraAddressStats>(`/address/${address}`, 'json');
   }
 
   getUtxos(address: string): Promise<EsploraUtxo[]> {

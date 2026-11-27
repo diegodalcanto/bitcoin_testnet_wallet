@@ -20,7 +20,16 @@ const VALID_WORD_COUNTS = [12, 15, 18, 21, 24];
 
 /** Come il wallet è salvato in localStorage: la frase in chiaro va bene solo perché è una rete di test. */
 export type StoredWallet =
-  | { v: 1; kind: 'mnemonic'; mnemonic: string; createdAt: number }
+  | {
+      v: 1;
+      kind: 'mnemonic';
+      mnemonic: string;
+      createdAt: number;
+      /** Quanti wallet (indirizzi m/84'/1'/0'/0/n) sono stati ricavati da questa frase; se manca, 1. */
+      count?: number;
+      /** Indice del wallet in uso, da 0; se manca, 0. */
+      active?: number;
+    }
   | { v: 1; kind: 'wif'; wif: string; createdAt: number };
 
 export interface WalletKeys {
@@ -29,6 +38,8 @@ export interface WalletKeys {
   mnemonic: string | null;
   /** Percorso di derivazione dell'indirizzo, es. m/84'/1'/0'/0/0. */
   path: string | null;
+  /** Indice del wallet ricavato dalla frase (null per una WIF importata). */
+  index: number | null;
   privateKey: Uint8Array;
   /** Chiave pubblica compressa (33 byte). */
   publicKey: Uint8Array;
@@ -65,12 +76,29 @@ function keysFromPrivateKey(privateKey: Uint8Array): Pick<WalletKeys, 'privateKe
   };
 }
 
-/** Frase → seme (BIP39) → chiave dell'account e dell'indirizzo (BIP84, m/84'/1'/0'/0/0). */
-export function keysFromMnemonic(mnemonic: string): WalletKeys {
-  const seed = mnemonicToSeedSync(mnemonic);
-  const root = HDKey.fromMasterSeed(seed, TPUB_VERSIONS);
-  const account = root.derive(CONFIG.ACCOUNT_PATH);
-  const node = root.derive(CONFIG.DERIVATION_PATH);
+/** Percorso del wallet n (da 0): stesso account BIP84, indirizzo di ricezione n. */
+export function walletPath(index: number): string {
+  return `${CONFIG.RECEIVE_PATH}/${index}`;
+}
+
+/** La derivazione BIP39 (2048 giri di PBKDF2) è lenta: si ricorda l'ultima frase usata. */
+let derivationCache: { mnemonic: string; account: HDKey; receive: HDKey } | null = null;
+
+function accountNodes(mnemonic: string): { account: HDKey; receive: HDKey } {
+  if (derivationCache?.mnemonic !== mnemonic) {
+    const account = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic), TPUB_VERSIONS).derive(CONFIG.ACCOUNT_PATH);
+    derivationCache = { mnemonic, account, receive: account.deriveChild(0) };
+  }
+  return derivationCache;
+}
+
+/**
+ * Frase → seme (BIP39) → account BIP84 m/84'/1'/0' → indirizzo di ricezione `index`.
+ * Wallet gerarchico: dalla stessa frase si ricavano tutti i wallet, uno per indice.
+ */
+export function keysFromMnemonic(mnemonic: string, index = 0): WalletKeys {
+  const { account, receive } = accountNodes(mnemonic);
+  const node = receive.deriveChild(index);
   if (!node.privateKey || !account.publicKey || !account.chainCode) throw new Error('Derivazione non riuscita');
   const vpubNode = new HDKey({
     versions: VPUB_VERSIONS,
@@ -83,7 +111,8 @@ export function keysFromMnemonic(mnemonic: string): WalletKeys {
   return {
     kind: 'mnemonic',
     mnemonic,
-    path: CONFIG.DERIVATION_PATH,
+    path: walletPath(index),
+    index,
     ...keysFromPrivateKey(node.privateKey),
     tpub: account.publicExtendedKey,
     vpub: vpubNode.publicExtendedKey,
@@ -98,6 +127,7 @@ export function keysFromWif(wif: string): WalletKeys {
     kind: 'wif',
     mnemonic: null,
     path: null,
+    index: null,
     ...keysFromPrivateKey(pair.privateKey),
     tpub: null,
     vpub: null,
@@ -105,7 +135,55 @@ export function keysFromWif(wif: string): WalletKeys {
 }
 
 export function keysFromStored(wallet: StoredWallet): WalletKeys {
-  return wallet.kind === 'mnemonic' ? keysFromMnemonic(wallet.mnemonic) : keysFromWif(wallet.wif);
+  return wallet.kind === 'mnemonic' ? keysFromMnemonic(wallet.mnemonic, activeIndex(wallet)) : keysFromWif(wallet.wif);
+}
+
+// ---------------------------------------------------------------------------
+// Più wallet dalla stessa frase
+// ---------------------------------------------------------------------------
+
+function clampIndex(value: number, max: number): number {
+  return Number.isInteger(value) ? Math.min(Math.max(value, 0), max) : 0;
+}
+
+/** Quanti wallet sono stati ricavati dalla frase (una WIF importata ne ha sempre uno solo). */
+export function walletCount(wallet: StoredWallet): number {
+  if (wallet.kind !== 'mnemonic') return 1;
+  const count = wallet.count ?? 1;
+  return Number.isInteger(count) ? Math.min(Math.max(count, 1), CONFIG.MAX_WALLETS) : 1;
+}
+
+/** Indice del wallet in uso. */
+export function activeIndex(wallet: StoredWallet): number {
+  return wallet.kind === 'mnemonic' ? clampIndex(wallet.active ?? 0, walletCount(wallet) - 1) : 0;
+}
+
+/** Si può ricavare un altro wallet? Serve una frase (non una WIF) e un posto libero. */
+export function canAddWallet(wallet: StoredWallet): boolean {
+  return wallet.kind === 'mnemonic' && walletCount(wallet) < CONFIG.MAX_WALLETS;
+}
+
+/** Aggiunge il wallet successivo (indirizzo m/84'/1'/0'/0/n) e lo rende quello in uso. */
+export function withNewWallet(wallet: StoredWallet): StoredWallet | null {
+  if (wallet.kind !== 'mnemonic' || !canAddWallet(wallet)) return null;
+  const count = walletCount(wallet) + 1;
+  return { ...wallet, count, active: count - 1 };
+}
+
+export function withActiveWallet(wallet: StoredWallet, index: number): StoredWallet {
+  if (wallet.kind !== 'mnemonic') return wallet;
+  return { ...wallet, active: clampIndex(index, walletCount(wallet) - 1) };
+}
+
+/** Dopo un ripristino: quanti wallet risultano già usati (senza cambiare quello in uso). */
+export function withWalletCount(wallet: StoredWallet, count: number): StoredWallet {
+  if (wallet.kind !== 'mnemonic') return wallet;
+  return { ...wallet, count: Math.min(Math.max(count, 1), CONFIG.MAX_WALLETS) };
+}
+
+/** Indirizzo del wallet `index` ricavato dalla frase. */
+export function walletAddress(mnemonic: string, index: number): string {
+  return keysFromMnemonic(mnemonic, index).address;
 }
 
 /** Firmatario per bitcoinjs-lib. */
@@ -213,7 +291,10 @@ function isStoredWallet(value: unknown): value is StoredWallet {
   if (!value || typeof value !== 'object') return false;
   const w = value as Record<string, unknown>;
   if (w.v !== 1 || typeof w.createdAt !== 'number') return false;
-  if (w.kind === 'mnemonic') return typeof w.mnemonic === 'string';
+  if (w.kind === 'mnemonic') {
+    const optionalInt = (n: unknown) => n === undefined || Number.isInteger(n);
+    return typeof w.mnemonic === 'string' && optionalInt(w.count) && optionalInt(w.active);
+  }
   if (w.kind === 'wif') return typeof w.wif === 'string';
   return false;
 }
