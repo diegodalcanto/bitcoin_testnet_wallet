@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { memoryStore } from './storage';
 import {
   ABANDON_ADDRESS,
+  ABANDON_ADDRESS_1,
+  ABANDON_ADDRESS_2,
   ABANDON_MNEMONIC,
   ABANDON_TPRV,
   ABANDON_TPUB,
@@ -15,7 +17,10 @@ import {
   KEY_ONE_WIF_TESTNET,
   KEY_ONE_WIF_TESTNET_UNCOMPRESSED,
 } from './test/fixtures';
+import { CONFIG } from './config';
 import {
+  activeIndex,
+  canAddWallet,
   clearStoredWallet,
   completeWord,
   confirmOptions,
@@ -27,7 +32,13 @@ import {
   parseImport,
   pickConfirmIndices,
   saveStoredWallet,
+  walletAddress,
+  walletCount,
+  withActiveWallet,
+  withNewWallet,
+  withWalletCount,
   type RandomInt,
+  type StoredWallet,
 } from './wallet';
 
 /** Generatore pseudo-casuale deterministico per i test. */
@@ -191,5 +202,62 @@ describe('conferma delle parole', () => {
     expect(options).toHaveLength(4);
     expect(new Set(options).size).toBe(4);
     expect(options).toContain('zoo');
+  });
+});
+
+describe('più wallet dalla stessa frase (wallet gerarchico)', () => {
+  const base: StoredWallet = { v: 1, kind: 'mnemonic', mnemonic: ABANDON_MNEMONIC, createdAt: 0 };
+
+  it('il wallet n usa l\'indirizzo m/84\'/1\'/0\'/0/n', () => {
+    const second = keysFromMnemonic(ABANDON_MNEMONIC, 1);
+    expect(second.address).toBe(ABANDON_ADDRESS_1);
+    expect(second.path).toBe("m/84'/1'/0'/0/1");
+    expect(second.index).toBe(1);
+    expect(walletAddress(ABANDON_MNEMONIC, 2)).toBe(ABANDON_ADDRESS_2);
+    // stesso account: stessa chiave pubblica estesa per tutti i wallet
+    expect(second.tpub).toBe(ABANDON_TPUB);
+    expect(second.vpub).toBe(ABANDON_VPUB);
+  });
+
+  it('senza campi in più è il wallet 1 di 1 (compatibile con i wallet già salvati)', () => {
+    expect(walletCount(base)).toBe(1);
+    expect(activeIndex(base)).toBe(0);
+    expect(keysFromStored(base).address).toBe(ABANDON_ADDRESS);
+  });
+
+  it('crea il wallet successivo e lo mette in uso', () => {
+    const two = withNewWallet(base)!;
+    expect(two).toMatchObject({ count: 2, active: 1 });
+    expect(keysFromStored(two).address).toBe(ABANDON_ADDRESS_1);
+    const three = withNewWallet(two)!;
+    expect(keysFromStored(three).address).toBe(ABANDON_ADDRESS_2);
+    expect(keysFromStored(withActiveWallet(three, 0)).address).toBe(ABANDON_ADDRESS);
+  });
+
+  it('limiti: massimo MAX_WALLETS wallet, indici fuori intervallo corretti', () => {
+    const full = withWalletCount(base, 999);
+    expect(walletCount(full)).toBe(CONFIG.MAX_WALLETS);
+    expect(canAddWallet(full)).toBe(false);
+    expect(withNewWallet(full)).toBeNull();
+    expect(activeIndex(withActiveWallet(withWalletCount(base, 3), 7))).toBe(2);
+    expect(activeIndex({ ...base, count: 2, active: -4 })).toBe(0);
+    expect(walletCount({ ...base, count: 0 })).toBe(1);
+  });
+
+  it('una WIF importata non ha altri wallet', () => {
+    const wif: StoredWallet = { v: 1, kind: 'wif', wif: KEY_ONE_WIF_TESTNET, createdAt: 0 };
+    expect(walletCount(wif)).toBe(1);
+    expect(canAddWallet(wif)).toBe(false);
+    expect(withNewWallet(wif)).toBeNull();
+    expect(keysFromStored(wif).index).toBeNull();
+  });
+
+  it('salva e rilegge numero e wallet in uso; rifiuta valori non interi', () => {
+    const kv = memoryStore();
+    const two = withNewWallet(base)!;
+    saveStoredWallet(kv, two);
+    expect(loadStoredWallet(kv)).toEqual(two);
+    expect(loadStoredWallet(memoryStore({ 'tw.wallet': JSON.stringify({ ...base, count: 'due' }) }))).toBeNull();
+    expect(loadStoredWallet(memoryStore({ 'tw.wallet': JSON.stringify({ ...base, active: 1.5 }) }))).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { pinEnabled } from '../../state/pin';
 import { navigate, paths } from '../../state/router';
 import { settings, updateSettings, type ThemeSetting } from '../../state/settings';
 import { showToast } from '../../state/toasts';
-import { changeNetwork, client, networkInfo } from '../../state/wallet';
+import { changeNetwork, client, networkInfo, walletIndex } from '../../state/wallet';
 import { formatSats } from '../../format';
 import { Message } from '../common';
 import { Explainable, SectionTitle } from '../explain';
@@ -112,6 +112,53 @@ export function Settings(): JSX.Element {
         <p class="muted small">{t.settings.forVolunteers}</p>
       </div>
 
+      <section class="card">
+        <h2 style={{ marginBottom: '4px' }}>{t.settings.wallet}</h2>
+        <ul class="list">
+          <li>
+            <a class="list-btn" href={paths.wallets} data-testid="wallets-link">
+              <span class="row">
+                <Icon name="wallet" />
+                <span>
+                  {t.settings.wallets}
+                  <span class="muted small" style={{ display: 'block', fontWeight: 500 }}>
+                    {t.wallets.name(walletIndex.value + 1)}
+                  </span>
+                </span>
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+          <li>
+            <a class="list-btn" href={paths.keys}>
+              <span class="row">
+                <Icon name="key" />
+                {t.settings.keys}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+          <li>
+            <a class="list-btn" href={paths.restore}>
+              <span class="row">
+                <Icon name="download" />
+                {t.settings.restore}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+          <li>
+            <a class="list-btn danger" href={paths.newPhrase} data-testid="new-phrase-settings-link">
+              <span class="row">
+                <Icon name="refresh" />
+                {t.settings.newPhrase}
+              </span>
+              <Icon name="chevronRight" />
+            </a>
+          </li>
+        </ul>
+      </section>
+
       <NetworkSection />
 
       <section class="card">
@@ -171,39 +218,6 @@ export function Settings(): JSX.Element {
               </a>
             </li>
           )}
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2 style={{ marginBottom: '4px' }}>{t.settings.wallet}</h2>
-        <ul class="list">
-          <li>
-            <a class="list-btn" href={paths.keys}>
-              <span class="row">
-                <Icon name="key" />
-                {t.settings.keys}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
-          <li>
-            <a class="list-btn" href={paths.restore}>
-              <span class="row">
-                <Icon name="download" />
-                {t.settings.restore}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
-          <li>
-            <a class="list-btn danger" href={paths.newWallet}>
-              <span class="row">
-                <Icon name="refresh" />
-                {t.settings.newWallet}
-              </span>
-              <Icon name="chevronRight" />
-            </a>
-          </li>
         </ul>
       </section>
 

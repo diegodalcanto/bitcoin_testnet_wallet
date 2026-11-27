@@ -6,7 +6,9 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { Transaction } from 'bitcoinjs-lib';
+import { HDKey } from '@scure/bip32';
+import { mnemonicToSeedSync } from '@scure/bip39';
+import { networks, payments, Transaction } from 'bitcoinjs-lib';
 import { chromium } from 'playwright';
 import { MockEsplora } from './mock-esplora.mjs';
 
@@ -22,6 +24,12 @@ const IPHONE_UA =
 const DEVICE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'it-IT' };
 const RECIPIENT = 'tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl';
 const ABANDON = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+
+/** Indirizzo atteso del wallet `index` (m/84'/1'/0'/0/index), calcolato qui in modo indipendente dall'app. */
+function deriveAddress(mnemonic, index) {
+  const node = HDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic)).derive(`m/84'/1'/0'/0/${index}`);
+  return payments.p2wpkh({ pubkey: node.publicKey, network: networks.testnet }).address;
+}
 
 let failures = 0;
 /** Pagina in uso: in caso di errore se ne salva uno screenshot. */
@@ -307,9 +315,12 @@ async function main() {
     await p2.getByRole('button', { name: 'Ripristina' }).click();
     await p2.getByText(/chiave di Bitcoin vero \(mainnet\)/).waitFor();
     check(true, 'WIF mainnet rifiutata');
+    mock2.fund(deriveAddress(ABANDON, 1), 7_000); // Wallet 2 era già stato usato su un altro telefono
     await p2.getByRole('textbox').fill(ABANDON);
     await p2.getByRole('button', { name: 'Ripristina' }).click();
     await p2.getByTestId('balance').waitFor();
+    await p2.getByText('Ritrovati 2 wallet', { exact: false }).waitFor({ timeout: 15_000 });
+    check(true, 'il ripristino ritrova da solo gli altri wallet già usati');
     const restored = await receiveAddress(p2);
     check(restored === 'tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl', 'dalla frase nota si ottiene l’indirizzo atteso');
     mock2.fund(restored, 42_000);
@@ -357,6 +368,75 @@ async function main() {
     check(await third.page.getByText(/memoria separata da Safari/).isVisible(), 'iOS: spiega perché creare il wallet nell’app installata');
     await shot(third.page, '24-install-ios');
     await third.context.close();
+
+    // ------------------------------------------------------------------ più wallet dalla stessa frase
+    console.log('Più wallet dalla stessa frase e pulsante del quiz');
+    const mock4 = new MockEsplora();
+    const fourth = await newContext(browser, mock4, { ua: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0 Safari/537.36' });
+    const p4 = fourth.page;
+    await p4.goto(BASE);
+    const mnemonic = (await createWallet(p4)).join(' ');
+    const firstAddress = await receiveAddress(p4);
+    check(firstAddress === deriveAddress(mnemonic, 0), "Wallet 1 = m/84'/1'/0'/0/0");
+    mock4.fund(firstAddress, 21_000);
+    await p4.goto(BASE);
+    await p4.getByTestId('balance').getByText('21.000').waitFor({ timeout: 20_000 });
+
+    const quiz = p4.getByTestId('quiz-link');
+    check(
+      (await quiz.textContent()).includes('Quiz laboratorio bitcoin') &&
+        (await quiz.getAttribute('href')) === 'https://quiz.echinus.it/home' &&
+        (await quiz.getAttribute('target')) === '_blank',
+      'pulsante "Quiz laboratorio bitcoin" verso quiz.echinus.it in una nuova scheda',
+    );
+    await shot(p4, '25-home-quiz');
+
+    // dalla Home: indicatore del wallet → I miei wallet → Crea un nuovo wallet
+    check((await p4.getByTestId('wallet-chip').textContent()).includes('Wallet 1'), 'la Home mostra il wallet in uso');
+    await p4.getByTestId('wallet-chip').click();
+    await p4.getByTestId('add-wallet').click();
+    await p4.getByText(/Wallet 2 pronto/).waitFor();
+    await p4.getByTestId('balance').getByText(/^0/).waitFor({ timeout: 20_000 });
+    check((await p4.getByTestId('wallet-chip').textContent()).includes('Wallet 2'), 'creato e messo in uso Wallet 2');
+    check((await p4.evaluate(() => window.scrollY)) === 0, 'la Home del nuovo wallet si apre dall’inizio');
+    const saved = await p4.evaluate(() => JSON.parse(localStorage.getItem('tw.wallet') ?? '{}'));
+    check(saved.mnemonic === mnemonic && saved.count === 2 && saved.active === 1, 'stesse 12 parole, nessuna frase nuova');
+    const secondAddress = await receiveAddress(p4);
+    check(secondAddress === deriveAddress(mnemonic, 1) && secondAddress !== firstAddress, "Wallet 2 = m/84'/1'/0'/0/1, indirizzo diverso");
+    check(await p4.getByText('Il tuo indirizzo (Wallet 2)').isVisible(), 'Ricevi indica quale wallet');
+    await p4.goto(`${BASE}#/chiavi`);
+    check(await p4.locator('p.mono', { hasText: "m/84'/1'/0'/0/1" }).isVisible(), "Le mie chiavi: percorso m/84'/1'/0'/0/1");
+
+    // elenco: torna a Wallet 1 con il suo saldo
+    await p4.goto(`${BASE}#/wallet`);
+    await p4.getByTestId('wallet-row').nth(1).waitFor();
+    check(/ultimo saldo noto: 21\.000 sats/.test(await p4.getByTestId('wallet-row').first().textContent()), 'l’elenco mostra l’ultimo saldo noto degli altri wallet');
+    await shot(p4, '26-wallets');
+    await p4.getByTestId('wallet-row').first().click();
+    await p4.getByTestId('balance').getByText('21.000').waitFor({ timeout: 20_000 });
+    check((await p4.getByTestId('wallet-chip').textContent()).includes('Wallet 1'), 'si torna a Wallet 1 con il suo saldo');
+
+    // azzeramento completo, ora secondario: 12 parole nuove, con doppia conferma
+    await p4.getByTestId('settings-link').click();
+    await p4.getByTestId('new-phrase-settings-link').click();
+    check(/21\.000 sats/.test(await p4.getByTestId('new-phrase-balance').textContent()), '12 parole nuove: avvisa che ci sono ancora sats');
+    check(await p4.getByText(/anche gli altri 1 wallet/).isVisible(), '12 parole nuove: avvisa che spariscono anche gli altri wallet');
+    await shot(p4, '27-new-phrase');
+    await p4.getByRole('button', { name: 'Crea 12 parole nuove' }).click();
+    await p4.getByRole('button', { name: 'Sì, ricomincia da zero' }).click();
+    await p4.waitForSelector('[data-testid="mnemonic-words"]');
+    await p4.getByRole('button', { name: 'Indietro', exact: true }).last().click();
+    const kept = await p4.evaluate(() => JSON.parse(localStorage.getItem('tw.wallet') ?? '{}').mnemonic);
+    check(kept === mnemonic, '"Indietro" non cancella niente');
+    await p4.getByRole('button', { name: 'Crea 12 parole nuove' }).click();
+    await p4.getByRole('button', { name: 'Sì, ricomincia da zero' }).click();
+    const fresh = await readWords(p4);
+    await p4.getByRole('button', { name: 'Salta' }).click();
+    await p4.getByText(/12 parole nuove e un nuovo indirizzo/).waitFor();
+    const replaced = await p4.evaluate(() => JSON.parse(localStorage.getItem('tw.wallet') ?? '{}'));
+    check(replaced.mnemonic === fresh.join(' ') && replaced.mnemonic !== mnemonic && !replaced.count, 'le 12 parole nuove sostituiscono tutto e si riparte da Wallet 1');
+    check(p4.errors.length === 0, `nessun errore JavaScript (${p4.errors.join(' | ')})`);
+    await fourth.context.close();
   } catch (err) {
     if (currentPage) {
       await currentPage.screenshot({ path: `${SHOTS}failure.png`, fullPage: true }).catch(() => undefined);

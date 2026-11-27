@@ -2,7 +2,8 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { explain, t, type ExplainTopic } from '../../i18n/it';
-import { keys } from '../../state/wallet';
+import { paths } from '../../state/router';
+import { keys, walletTotal } from '../../state/wallet';
 import { CopyButton, Message, RichMessage } from '../common';
 import { Explainable, SectionTitle } from '../explain';
 import { Icon } from '../icons';
@@ -88,6 +89,7 @@ export function Keys(): JSX.Element | null {
       <Message kind="warning" icon="lock">
         {t.keys.warning}
       </Message>
+      {k.index !== null && walletTotal.value > 1 && <p class="small muted">{t.keys.whichWallet(t.wallets.name(k.index + 1))}</p>}
 
       <section class="card">
         <SectionTitle topic="keysDiagram">{explain.keysDiagram.title}</SectionTitle>
@@ -132,6 +134,13 @@ export function Keys(): JSX.Element | null {
       <RichMessage kind="warning" text={t.home.mainnetWarning} />
       <section class="card">
         <SectionTitle topic="storage">{explain.storage.title}</SectionTitle>
+      </section>
+      <section class="card stack">
+        <p class="small">{t.keys.newWalletHint}</p>
+        <a class="btn btn-outline btn-block" href={paths.wallets} data-testid="keys-wallets">
+          <Icon name="wallet" />
+          {t.keys.newWallet}
+        </a>
       </section>
     </div>
   );

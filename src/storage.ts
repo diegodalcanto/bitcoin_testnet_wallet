@@ -6,6 +6,8 @@ export interface KeyValueStore {
   get(key: string): string | null;
   set(key: string, value: string): void;
   remove(key: string): void;
+  /** Tutte le chiavi salvate. */
+  keys(): string[];
 }
 
 export function memoryStore(initial: Record<string, string> = {}): KeyValueStore {
@@ -14,6 +16,7 @@ export function memoryStore(initial: Record<string, string> = {}): KeyValueStore
     get: (key) => map.get(key) ?? null,
     set: (key, value) => void map.set(key, value),
     remove: (key) => void map.delete(key),
+    keys: () => [...map.keys()],
   };
 }
 
@@ -50,6 +53,13 @@ function browserStore(): KeyValueStore {
         fallback.remove(key);
       }
     },
+    keys() {
+      try {
+        return Array.from({ length: storage.length }, (_, i) => storage.key(i)).filter((k): k is string => k !== null);
+      } catch {
+        return fallback.keys();
+      }
+    },
   };
 }
 
@@ -69,15 +79,25 @@ export function writeJson(kv: KeyValueStore, key: string, value: unknown): void 
   kv.set(key, JSON.stringify(value));
 }
 
-/** Chiavi usate in localStorage (prefisso `tw.` = testnet wallet). */
+/**
+ * Chiavi usate in localStorage (prefisso `tw.` = testnet wallet). Stato locale delle transazioni e
+ * cache sono separati per rete e per indirizzo: `scope` = "<rete>.<indirizzo>".
+ */
 export const KEYS = {
   wallet: 'tw.wallet',
   settings: 'tw.settings',
   pin: 'tw.pin',
   installSeen: 'tw.installSeen',
-  pending: (networkKey: string) => `tw.pending.${networkKey}`,
-  cache: (networkKey: string) => `tw.cache.${networkKey}`,
+  pendingPrefix: 'tw.pending.',
+  cachePrefix: 'tw.cache.',
+  pending: (scope: string) => `tw.pending.${scope}`,
+  cache: (scope: string) => `tw.cache.${scope}`,
 } as const;
+
+/** Cancella tutte le chiavi che iniziano con `prefix`. */
+export function removeByPrefix(kv: KeyValueStore, prefix: string): void {
+  for (const key of kv.keys()) if (key.startsWith(prefix)) kv.remove(key);
+}
 
 /** Chiede al browser di non cancellare i dati del sito (spec §4). */
 export async function requestPersistentStorage(): Promise<boolean> {

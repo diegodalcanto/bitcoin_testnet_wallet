@@ -5,7 +5,7 @@ import { t } from '../../i18n/it';
 import { navigate, paths } from '../../state/router';
 import { settings, updateSettings } from '../../state/settings';
 import { refresh, syncStatus } from '../../state/sync';
-import { balance, chain, history, neverLoaded } from '../../state/wallet';
+import { balance, chain, history, neverLoaded, walletIndex } from '../../state/wallet';
 import { Btc, Logos } from '../common';
 import { Explainable, InlineExplain, SectionTitle } from '../explain';
 import { useNow, usePullToRefresh } from '../hooks';
@@ -15,8 +15,20 @@ import { TxRow } from '../TxRow';
 function BalanceCard(): JSX.Element {
   const b = balance.value;
   const hidden = settings.value.hideBalance;
+  const walletName = t.wallets.name(walletIndex.value + 1);
   return (
     <section class="card balance-card" aria-labelledby="balance-label">
+      <button
+        type="button"
+        class="wallet-chip"
+        aria-label={t.home.chooseWallet(walletName)}
+        onClick={() => navigate(paths.wallets)}
+        data-testid="wallet-chip"
+      >
+        <Icon name="wallet" />
+        {walletName}
+        <Icon name="chevronDown" />
+      </button>
       <Explainable topic="balance" label={<span id="balance-label">{t.home.balance}</span>} class="balance-label-wrap">
         <button
           type="button"
@@ -138,6 +150,11 @@ export function Home(): JSX.Element {
           {t.home.send}
         </button>
       </div>
+      <a class="btn btn-quiz btn-lg btn-block quiz-link" href={CONFIG.QUIZ_URL} target="_blank" rel="noopener noreferrer" data-testid="quiz-link">
+        <Icon name="quiz" />
+        {t.home.quiz}
+        <Icon name="external" />
+      </a>
       <SyncLine />
       <div class="section">
         <NetworkStatus />

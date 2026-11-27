@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { t } from '../../i18n/it';
 import { navigate, paths } from '../../state/router';
 import { showToast } from '../../state/toasts';
-import { installWallet, storedWallet } from '../../state/wallet';
+import { discoverWallets, installWallet, storedWallet } from '../../state/wallet';
 import { parseImport, type ImportError, type StoredWallet } from '../../wallet';
 import { Dialog, RichMessage } from '../common';
 import { Rich } from '../text';
@@ -39,6 +39,11 @@ export function RestoreForm({ onCancel }: { onCancel?: () => void }): JSX.Elemen
     installWallet(wallet);
     showToast(t.restore.success, 'success');
     navigate(paths.home, { replace: true });
+    if (wallet.kind === 'mnemonic') {
+      discoverWallets()
+        .then((count) => count > 1 && showToast(t.wallets.discovered(count), 'success'))
+        .catch(() => undefined); // senza rete si ritrovano a mano da "I miei wallet"
+    }
   };
 
   return (

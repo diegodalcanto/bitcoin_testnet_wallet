@@ -164,6 +164,19 @@ export class MockEsplora {
       const source = this.stale ? this.staleUtxos : this.utxos;
       return { json: [...source.values()].filter((u) => u.address === m[1]).map((u) => this.utxoJson(u)) };
     }
+    if ((m = /^\/address\/([^/]+)$/.exec(path))) {
+      const address = m[1];
+      const involved = [...this.txs.values()]
+        .map(({ tx }) => tx)
+        .filter((tx) => tx.vout.some((o) => o.scriptpubkey_address === address) || tx.vin.some((i) => i.prevout?.scriptpubkey_address === address));
+      return {
+        json: {
+          address,
+          chain_stats: { tx_count: involved.filter((tx) => tx.status.confirmed).length },
+          mempool_stats: { tx_count: involved.filter((tx) => !tx.status.confirmed).length },
+        },
+      };
+    }
     if ((m = /^\/address\/([^/]+)\/txs$/.exec(path))) {
       const address = m[1];
       const list = [...this.txs.values()]

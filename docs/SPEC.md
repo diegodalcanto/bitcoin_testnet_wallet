@@ -278,3 +278,16 @@ Un solo codice per entrambe le piattaforme; le differenze riguardano installazio
 5. Commit piccoli e descrittivi; aggiornare il README con istruzioni per ragazzi e volontari.
 
 **Fonti:** [note di rilascio Bitcoin Core 31.0](https://bitcoin.org/en/releases/31.0/) per i limiti cluster della mempool.
+
+## 9. Modifiche successive alla prima versione
+
+Richieste dopo la prima pubblicazione (novembre 2026); dove contrastano con le sezioni precedenti, valgono
+queste.
+
+- **Più wallet dalla stessa frase (wallet gerarchico).** "Crea un nuovo wallet" non genera 12 parole nuove:
+  ricava dallo stesso seed l'indirizzo successivo, `m/84'/1'/0'/0/n` (Wallet 1 = …/0/0, Wallet 2 = …/0/1…).
+  Ogni wallet ha un solo indirizzo riusato, il suo saldo e il suo stato locale; si passa dall'uno all'altro
+  da "I miei wallet". Le stesse 12 parole li recuperano tutti, anche in altri wallet BIP84 (massimo 20, entro
+  il gap limit); dopo un ripristino l'app ritrova da sola quelli già usati. Ricominciare con 12 parole nuove
+  resta possibile, come azione separata con doppia conferma.
+- **Pulsante "Quiz laboratorio bitcoin"** nella Home, che apre <https://quiz.echinus.it/home>.

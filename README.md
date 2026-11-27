@@ -25,7 +25,8 @@ Specifica completa: [`docs/SPEC.md`](docs/SPEC.md). Contenuti della lezione: [`d
      *Testnet Wallet* dalla Home.
 2. Tocca **Crea nuovo wallet** e scrivi le **12 parole** su un foglio: sono la chiave del tuo wallet.
 3. Tocca **Ricevi** e mostra il QR ai volontari: riceverai i sats di test per giocare.
-4. A ogni domanda del quiz ogni risposta ha un suo QR. Per rispondere: **Invia** → **Scansiona QR** (o
+4. Il pulsante **Quiz laboratorio bitcoin** nella Home apre il sito del quiz (<https://quiz.echinus.it/home>).
+   A ogni domanda ogni risposta ha un suo QR. Per rispondere: **Invia** → **Scansiona QR** (o
    **Incolla** l'indirizzo) → scegli quanto puntare (**25%**, **50%**, **Tutto** o un importo) → **scorri per
    inviare**.
 5. Puoi puntare subito anche i sats "in attesa di conferma": non serve aspettare il blocco.
@@ -72,7 +73,7 @@ Con queste regole ogni ragazzo resta in un cluster suo, di poche transazioni.
 
 ### Cambiare rete
 
-Dalla Home, icona delle **Impostazioni** in alto a destra → **Rete**:
+Dalla Home, icona delle **Impostazioni** (ingranaggio) in alto a destra → **Rete**:
 
 | Rete | Server | Quando usarla |
 | --- | --- | --- |
@@ -90,6 +91,8 @@ transazioni in attesa.
 | Problema | Soluzione |
 | --- | --- |
 | La fotocamera non parte o il permesso è negato | Usare **Incolla**, oppure abilitare la fotocamera nelle impostazioni del browser |
+| Serve un altro wallet (un altro indirizzo) | Toccare **Wallet 1** sopra il saldo (o Impostazioni → *I miei wallet*) → **Crea un nuovo wallet**: nuovo indirizzo ricavato dalle **stesse 12 parole** (wallet gerarchico, `m/84'/1'/0'/0/n`), niente da riscrivere. Dallo stesso elenco si passa da un wallet all'altro; ognuno ha il suo saldo |
+| Un ragazzo vuole ricominciare da zero | Impostazioni → **Ricomincia con 12 parole nuove**: doppia conferma, poi le parole nuove. Cancella la frase attuale e tutti i suoi wallet, ma solo alla fine |
 | PIN dimenticato | "Ho dimenticato il PIN" cancella il wallet: si ripristina con le 12 parole |
 | Dati del browser cancellati / app disinstallata | Il wallet si recupera solo con le 12 parole (Impostazioni → Ripristina wallet) |
 | Su iPhone il wallet "è sparito" dopo l'installazione | Era stato creato in Safari: l'app installata ha una memoria separata |

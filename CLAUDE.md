@@ -37,6 +37,10 @@ I ragazzi la installano dal link, ricevono sats di test e li "puntano" sulle ris
    (in `public/brand/`) nel benvenuto, nel piè di pagina della Home e in Info.
 10. Su iOS il wallet si crea **solo nell'app installata** (Safari e app sulla Home hanno memorie
     separate).
+11. **Più wallet dallo stesso seed** (richiesta successiva alla spec, vedi `docs/SPEC.md` §9): il wallet n
+    usa l'indirizzo `m/84'/1'/0'/0/n` (stesso account, quindi stessa tpub/vpub); ognuno ha un solo
+    indirizzo riusato, saldo e stato locale suoi. Massimo `CONFIG.MAX_WALLETS` (20, entro il gap limit).
+    "Crea un nuovo wallet" non genera parole nuove: per quello c'è "Ricomincia con 12 parole nuove".
 
 ## Comandi
 
@@ -67,7 +71,7 @@ al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 | `src/history.ts`, `src/format.ts` | Storico visto dal proprio indirizzo, formattazione it-IT |
 | `src/probe.ts` | Prova di un server Esplora personalizzato (rifiuta mainnet) |
 | `src/storage.ts`, `src/ecc.ts`, `src/brand.ts` | localStorage sicuro, init secp256k1, elenco loghi |
-| `src/state/` | Signals: impostazioni, wallet e dati di rete (`wallet.ts`), polling (`sync.ts`), invio con ritentativi (`send.ts`), PIN, PWA, router a hash, piattaforma |
+| `src/state/` | Signals: impostazioni, wallet e dati di rete (`wallet.ts`: wallet in uso, creazione/scelta, ricerca dopo il ripristino), polling (`sync.ts`), invio con ritentativi (`send.ts`), PIN, PWA, router a hash, piattaforma |
 | `src/ui/` | `App.tsx` (shell, header con badge, navigazione), `screens/` (una schermata per file), componenti comuni, `styles.css` |
 | `src/i18n/it.ts` | Tutti i testi: `explain` (box "i"), `learnCards` (Impara), `t` (interfaccia) |
 | `public/brand/` | Loghi (versione chiara e scura) |
@@ -84,6 +88,14 @@ al flusso di invio: `npm run test:e2e` e guardare gli screenshot.
 - Una voce locale è "riflessa" dall'API solo se l'API la conosce **e** nella stessa vista nessuna delle sue
   monete risulta ancora non spesa (protegge da server di riserva in ritardo).
 - Su iOS non installata si mostra la guida all'installazione prima di creare il wallet.
+- Più wallet: `screens/Wallets.tsx` ("I miei wallet", aperto dall'indicatore sopra il saldo o dalle
+  Impostazioni) crea e sceglie i wallet. Stato locale e cache stanno in `tw.pending.<rete>.<indirizzo>` e
+  `tw.cache.<rete>.<indirizzo>`, così un wallet non vede mai i resti di un altro. Dopo un ripristino da 12
+  parole `discoverWallets()` ritrova gli indirizzi già usati (si ferma dopo `DISCOVERY_GAP` mai usati).
+- Ricominciare da zero (`screens/NewPhrase.tsx`): doppia conferma, poi `screens/CreateWallet.tsx` (lo
+  stesso componente dell'onboarding) mostra le parole nuove; la frase attuale viene sostituita da
+  `installWallet` solo alla fine, quindi "Indietro" non perde nulla.
+- Pulsante "Quiz laboratorio bitcoin" nella Home: apre `CONFIG.QUIZ_URL` in una nuova scheda.
 - Messaggio d'errore del limite cluster di Core 31: la stringa esatta non è documentata; si riconosce
   `too-long-mempool-chain` o qualsiasi testo che contenga "cluster".
 
